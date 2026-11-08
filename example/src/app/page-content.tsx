@@ -4,7 +4,7 @@ import { DARTSLIVEHomeConnector } from '@minimalcorp/dartboard-connector/dartsli
 import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { chooseMatchFirst, chooseMatchGame, createGame, isX01Game, label, nextTurn, resolveCork, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule } from '../lib/game'
+import { chooseMatchFirst, chooseMatchGame, createGame, isX01Game, label, nextTurn, resolveCork, resolveMatchCoinToss, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -79,11 +79,14 @@ export const Example = () => {
     oscillator.start(); oscillator.stop(ctx.currentTime + 0.16)
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit) => {
-    if (next === previous) return
-    gameRef.current = next; setHistory(items => [...items, previous]); setGame(next)
-    if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', next)
+    const resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
+      ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
+      : next
+    if (resolved === previous) return
+    gameRef.current = resolved; setHistory(items => [...items, previous]); setGame(resolved)
+    if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
     if (hit) playSound(hit)
-  }, [playSound, onlineSeat])
+  }, [onlineStatus, playSound, onlineSeat])
   const apply = useCallback((action: 'next' | Hit) => {
     const previous = gameRef.current
     if (!previous || previous.finished) return
@@ -148,7 +151,10 @@ export const Example = () => {
       setScreen('game')
       setHistory([])
       if (match.seat === 0) {
-        const next = createGame(match.mode, match.players, 501, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
+        const initialGame = createGame(match.mode, match.players, 501, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
+        const next = match.mode === 'match'
+          ? resolveMatchCoinToss(initialGame, Math.random() < 0.5 ? 0 : 1)
+          : { ...initialGame, message: `COIN TOSS · ${initialGame.players[0].name} GOES FIRST` }
         gameRef.current = next
         setGame(next)
         socket.emit('match:state', next)
@@ -282,14 +288,14 @@ export const Example = () => {
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${mode === 'robo' && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? `${game.practiceHits}` : activePlayer?.score}</div>
           {mode === 'practice' && <p className="practice-focus">TARGET <strong>{game.practiceTarget === 25 ? 'BULL' : game.practiceTarget}</strong></p>}
-          {mode === 'match' && game.match!.stage === 'choice' ? <div className="match-decision">{game.match!.choiceAs === null ? <><p>CORKの勝者が選びます。先攻を取るか、ゲーム選択権を取ってください。</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('first', 'first')}>先攻を取る</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('choose', 'game')}>ゲームを選ぶ</button></> : <><p>{game.players[game.active].name} がCHのゲームを選択</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', '01')}>01を選ぶ</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', 'cricket')}>CRICKETを選ぶ</button></>}</div> : mode === 'match' && game.match!.stage === 'cork-tie' ? <div className="match-decision"><p>同じエリアに入っています。実際に中心に近い方を選んでください。</p>{game.players.map((p, i) => <button key={i} disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('cork-winner', i)}>{p.name} のダーツが近い</button>)}</div> : <>
+          {mode === 'match' && game.match!.stage === 'choice' ? <div className="match-decision">{game.match!.choiceAs === null ? <><p>{onlineStatus === 'matched' ? 'コイントスの勝者' : 'コークの勝者'}が選びます。先攻を取るか、ゲーム選択権を取ってください。</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('first', 'first')}>先攻を取る</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('choose', 'game')}>ゲームを選ぶ</button></> : <><p>{game.players[game.active].name} がCHのゲームを選択</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', '01')}>01を選ぶ</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', 'cricket')}>CRICKETを選ぶ</button></>}</div> : mode === 'match' && game.match!.stage === 'cork-tie' ? <div className="match-decision"><p>同じエリアに入っています。実際に中心に近い方を選んでください。</p>{game.players.map((p, i) => <button key={i} disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('cork-winner', i)}>{p.name} のダーツが近い</button>)}</div> : <>
             <div className="throw-message" aria-live="polite">{game.message}</div>
             <div className="dart-slots">{(mode === 'match' && game.match!.stage === 'cork' ? [0, 1] : [0, 1, 2]).map(i => <div key={i}><small>{mode === 'match' && game.match!.stage === 'cork' ? `CORK · ${game.players[i].name}` : `DART ${i + 1}`}</small><b>{mode === 'match' && game.match!.stage === 'cork' ? game.match!.corkThrows[i] ? label(game.match!.corkThrows[i]) : '—' : game.throws[i] ? label(game.throws[i]) : '—'}</b></div>)}</div>
             {mode === 'match' && game.match!.stage === 'cork' ? <div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div> : (mode !== 'robo' || game.active === 0) ? <><button className="primary-button next-turn" disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => apply('next')}>{game.throws.length === 3 || game.bust ? 'CHANGE / 次のプレイヤー' : 'ターンを終了'} <span>→</span></button><div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<button onClick={() => apply({ base: 0, ratio: 1 })} disabled={game.throws.length >= 3 || game.bust || onlineStatus === 'matched' && game.active !== onlineSeat}>MISS</button><label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div></> : mode === 'robo' && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : null}
             <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
           </>}
         </div>
-        <div className="board-wrap">{(mode === 'cricket' || mode === 'match' && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')}/></div>
+        <div className="board-wrap">{(mode === 'cricket' || mode === 'match' && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')}/></div>
       </div>}
     </section>}
     <footer className="app-footer"><span>DARTS ROOM</span><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'LOCAL PLAY · OFFLINE'}</span></footer>

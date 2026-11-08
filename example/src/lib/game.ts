@@ -97,6 +97,17 @@ export function resolveCork(game: Game, winner: number): Game {
   return { ...game, match, active: winner, throws: [], message: `${game.players[winner].name} WON CORK · CHOICE` }
 }
 
+export function resolveMatchCoinToss(game: Game, winner: number): Game {
+  if (!game.match || game.match.stage !== 'cork' || (winner !== 0 && winner !== 1)) return game
+  const match = { ...game.match, legWins: [...game.match.legWins] as [number, number], legModes: [...game.match.legModes] }
+  if (match.corkPurpose === 'opening') {
+    const started = resetLeg({ ...game, match }, '01', winner, match.initial)
+    return { ...started, message: `COIN TOSS · ${game.players[winner].name} GOES FIRST` }
+  }
+  match.stage = 'choice'; match.choiceOwner = winner; match.choiceAs = null; match.corkThrows = []
+  return { ...game, match, active: winner, throws: [], message: `COIN TOSS · ${game.players[winner].name} WINS · CHOICE` }
+}
+
 function corkRank(hit: Hit): number {
   if (hit.base === 25) return hit.ratio === 2 ? 0 : 1
   if (hit.base === 0) return 5
