@@ -140,7 +140,14 @@ export const Example = () => {
       localStreamRef.current = stream
       setLocalStream(stream)
     } catch (cause) {
-      setCameraError(cause instanceof Error ? `カメラを開始できませんでした: ${cause.message}` : 'カメラを開始できませんでした。ブラウザーのカメラ許可をご確認ください。')
+      const reason = cause instanceof Error ? `${cause.name} ${cause.message}` : ''
+      if (/permission|denied|dismissed|notallowed/i.test(reason)) {
+        setCameraError('カメラの許可が閉じられました。アドレスバー左のサイト設定から「カメラ」を許可し、ページを再読み込みしてからもう一度押してください。')
+      } else if (/notfound|devicesnotfound/i.test(reason)) {
+        setCameraError('カメラが見つかりません。カメラを接続してからもう一度お試しください。')
+      } else {
+        setCameraError(cause instanceof Error ? `カメラを開始できませんでした: ${cause.message}` : 'カメラを開始できませんでした。ブラウザーのカメラ許可をご確認ください。')
+      }
     }
   }
 
