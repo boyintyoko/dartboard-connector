@@ -15,6 +15,7 @@
     "start-match-server": "node online-server.js",
     "ci": "yarn workspaces run ci",
     "test:game": "node tests/game-check.mjs",
+    "test:matchmaking": "node tests/matchmaking-check.mjs",
     "test:bluetooth": "tsc -p packages/dartboard-connector/tsconfig.json && node tests/bluetooth-check.mjs"
   },
   "private": true,

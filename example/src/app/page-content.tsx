@@ -63,6 +63,8 @@ export const Example = () => {
   const [history, setHistory] = useState<Game[]>([])
   const [lastInput, setLastInput] = useState('')
   const [onlineStatus, setOnlineStatus] = useState<'offline' | 'connecting' | 'searching' | 'matched'>('offline')
+  const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
+  const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
@@ -120,7 +122,7 @@ export const Example = () => {
     if (previous && result.applied && result.game) apply(signal.type === 'segment' ? signal : 'next')
   }, [apply])
 
-  const findRandomOpponent = () => {
+  const findOnlineOpponent = () => {
     if (onlineStatus === 'searching') {
       onlineSocket.current?.emit('queue:leave')
       onlineSocket.current?.disconnect()
@@ -136,7 +138,7 @@ export const Example = () => {
     const socket = io(url, { transports: ['websocket', 'polling'], timeout: 10000 })
     onlineSocket.current?.disconnect()
     onlineSocket.current = socket
-    socket.on('connect', () => { setOnlineStatus('searching'); socket.emit('queue:join') })
+    socket.on('connect', () => { setOnlineStatus('searching'); socket.emit('queue:join', { mode: onlineMode }) })
     socket.on('connect_error', cause => {
       setOnlineStatus('offline')
       setError(`マッチングサーバーに接続できません。サーバーを起動してください。(${cause.message})`)
@@ -145,6 +147,7 @@ export const Example = () => {
     socket.on('match:found', (match: { room: string; seat: number; mode: Mode; players: string[] }) => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
       setOnlineStatus('matched')
+      setOnlineSelectionOpen(false)
       setMode(match.mode)
       setCount(2)
       setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
@@ -257,8 +260,15 @@ export const Example = () => {
       <section className="welcome"><div><div className="kicker">HOME DARTS · LOCAL PLAY</div><h1>今日の一本を、<span>ここから。</span></h1><p>遊びたいゲームを選んで、スタート。</p></div><div className="welcome-orbit">D<span>●</span></div></section>
       <section className="mode-section"><div className="section-heading"><div><span className="kicker">CHOOSE YOUR GAME</span><h2>GAME SELECT</h2></div><span className="local-tag">● LOCAL + ONLINE</span></div>
         <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}
-          <button className="game-card online-card" onClick={findRandomOpponent} disabled={onlineStatus === 'connecting'} aria-label={onlineStatus === 'searching' ? 'オンライン対戦をキャンセル' : 'オンラインランダムマッチを探す'}><span className="card-icon">◎</span><span className="card-arrow">{onlineStatus === 'searching' ? '×' : '↗'}</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を検索中 · タップでキャンセル' : '実ユーザーとランダム対戦'}</small></span></button>
+          <button className="game-card online-card" onClick={() => onlineStatus === 'searching' ? findOnlineOpponent() : setOnlineSelectionOpen(open => !open)} disabled={onlineStatus === 'connecting'} aria-expanded={onlineSelectionOpen} aria-label={onlineStatus === 'searching' ? 'オンライン対戦をキャンセル' : 'オンライン対戦のゲームモードを選ぶ'}><span className="card-icon">◎</span><span className="card-arrow">{onlineStatus === 'searching' ? '×' : '↗'}</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を検索中 · タップでキャンセル' : onlineSelectionOpen ? 'ゲームモードを選択してください' : '01・CR・MATCH・RANDOM'}</small></span></button>
         </div>
+        {onlineSelectionOpen && <div className="online-mode-panel">
+          <div className="online-mode-heading"><div><strong>オンライン対戦モード</strong><small>相手と同じモード、またはRANDOM同士でマッチします。</small></div></div>
+          <div className="online-mode-options" role="group" aria-label="オンライン対戦モード">
+            {([{ id: '01', title: '01', detail: 'ゼロワン' }, { id: 'cricket', title: 'CR', detail: 'クリケット' }, { id: 'match', title: 'MATCH', detail: 'メドレー' }, { id: 'random', title: 'RANDOM', detail: 'どのモードともマッチ' }] as const).map(option => <button key={option.id} className={onlineMode === option.id ? 'chosen' : ''} aria-pressed={onlineMode === option.id} disabled={onlineStatus === 'connecting' || onlineStatus === 'searching'} onClick={() => setOnlineMode(option.id)}><strong>{option.title}</strong><small>{option.detail}</small></button>)}
+          </div>
+          <button className="online-search-button" onClick={findOnlineOpponent} disabled={onlineStatus === 'connecting'}>{onlineStatus === 'searching' ? '検索をキャンセル' : onlineStatus === 'connecting' ? '接続中…' : '対戦相手を検索'} <span>→</span></button>
+        </div>}
       </section>
       <section className="home-note"><span>01</span><p>Bluetoothボードまたは画面入力に対応。</p><span>PLAY AT HOME</span></section>
     </>}
