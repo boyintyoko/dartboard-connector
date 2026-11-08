@@ -66,6 +66,7 @@ export const Example = () => {
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
   const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
+  const autoChangedTurn = useRef<Game | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
   const soundRef = useRef(sound); soundRef.current = sound
@@ -74,11 +75,44 @@ export const Example = () => {
 
   const playSound = useCallback((hit: Hit) => {
     if (!soundRef.current || !audio.current || audio.current.state !== 'running') return
-    const ctx = audio.current, oscillator = ctx.createOscillator(), gain = ctx.createGain()
-    oscillator.connect(gain); gain.connect(ctx.destination)
-    oscillator.frequency.value = hit.base === 25 ? 880 : hit.base === 0 ? 180 : 440 + hit.ratio * 110
-    gain.gain.setValueAtTime(0.07, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16)
-    oscillator.start(); oscillator.stop(ctx.currentTime + 0.16)
+    const ctx = audio.current
+    const now = ctx.currentTime
+    const tone = (frequency: number, delay: number, duration: number, volume: number, type: OscillatorType = 'sine') => {
+      const oscillator = ctx.createOscillator(), envelope = ctx.createGain(), filter = ctx.createBiquadFilter()
+      const start = now + delay
+      oscillator.type = type
+      oscillator.frequency.setValueAtTime(frequency * 1.45, start)
+      oscillator.frequency.exponentialRampToValueAtTime(frequency, start + Math.min(0.045, duration / 3))
+      filter.type = 'lowpass'; filter.frequency.value = Math.max(900, frequency * 3)
+      oscillator.connect(filter); filter.connect(envelope); envelope.connect(ctx.destination)
+      envelope.gain.setValueAtTime(0.0001, start)
+      envelope.gain.exponentialRampToValueAtTime(volume, start + 0.008)
+      envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+      oscillator.start(start); oscillator.stop(start + duration + 0.01)
+    }
+    if (hit.base === 0) {
+      tone(145, 0, 0.12, 0.065, 'triangle')
+      return
+    }
+    if (hit.base === 25) {
+      const innerBull = hit.ratio === 2
+      tone(innerBull ? 880 : 660, 0, innerBull ? 0.48 : 0.32, 0.09)
+      tone(innerBull ? 1320 : 990, 0.035, innerBull ? 0.38 : 0.25, 0.055, 'triangle')
+      if (innerBull) tone(1760, 0.075, 0.28, 0.035)
+      return
+    }
+    const pitch = 280 + (hit.base % 12) * 16
+    tone(105, 0, 0.075, 0.07, 'triangle')
+    if (hit.ratio === 3) {
+      tone(pitch * 2, 0.015, 0.2, 0.075, 'triangle')
+      tone(pitch * 3, 0.045, 0.28, 0.045)
+      tone(pitch * 4, 0.08, 0.22, 0.035, 'triangle')
+    } else if (hit.ratio === 2) {
+      tone(pitch * 1.5, 0.015, 0.22, 0.075, 'triangle')
+      tone(pitch * 2, 0.05, 0.3, 0.05)
+    } else {
+      tone(pitch, 0.01, 0.13, 0.065, 'triangle')
+    }
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit) => {
     const resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
@@ -220,6 +254,19 @@ export const Example = () => {
     }, 900)
     return () => window.clearTimeout(timer)
   }, [game, difficulty, commitGame])
+  useEffect(() => {
+    if (!game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
+    if (onlineStatus === 'matched' && onlineSeat !== 0) return
+    if ((!game.bust && game.throws.length !== 3) || autoChangedTurn.current === game) return
+    const completedTurn = game
+    const timer = window.setTimeout(() => {
+      const current = gameRef.current
+      if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
+      autoChangedTurn.current = completedTurn
+      commitGame(current, nextTurn(current))
+    }, game.bust ? 700 : 650)
+    return () => window.clearTimeout(timer)
+  }, [game, onlineStatus, onlineSeat, commitGame])
 
   const connect = async () => {
     if (!('bluetooth' in navigator)) { setError('BluetoothはChrome / Edgeで、localhostまたはHTTPSから利用できます。'); return }
@@ -301,7 +348,7 @@ export const Example = () => {
           {mode === 'match' && game.match!.stage === 'choice' ? <div className="match-decision">{game.match!.choiceAs === null ? <><p>{onlineStatus === 'matched' ? 'コイントスの勝者' : 'コークの勝者'}が選びます。先攻を取るか、ゲーム選択権を取ってください。</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('first', 'first')}>先攻を取る</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('choose', 'game')}>ゲームを選ぶ</button></> : <><p>{game.players[game.active].name} がCHのゲームを選択</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', '01')}>01を選ぶ</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', 'cricket')}>CRICKETを選ぶ</button></>}</div> : mode === 'match' && game.match!.stage === 'cork-tie' ? <div className="match-decision"><p>同じエリアに入っています。実際に中心に近い方を選んでください。</p>{game.players.map((p, i) => <button key={i} disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('cork-winner', i)}>{p.name} のダーツが近い</button>)}</div> : <>
             <div className="throw-message" aria-live="polite">{game.message}</div>
             <div className="dart-slots">{(mode === 'match' && game.match!.stage === 'cork' ? [0, 1] : [0, 1, 2]).map(i => <div key={i}><small>{mode === 'match' && game.match!.stage === 'cork' ? `CORK · ${game.players[i].name}` : `DART ${i + 1}`}</small><b>{mode === 'match' && game.match!.stage === 'cork' ? game.match!.corkThrows[i] ? label(game.match!.corkThrows[i]) : '—' : game.throws[i] ? label(game.throws[i]) : '—'}</b></div>)}</div>
-            {mode === 'match' && game.match!.stage === 'cork' ? <div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div> : (mode !== 'robo' || game.active === 0) ? <><button className="primary-button next-turn" disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => apply('next')}>{game.throws.length === 3 || game.bust ? 'CHANGE / 次のプレイヤー' : 'ターンを終了'} <span>→</span></button><div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<button onClick={() => apply({ base: 0, ratio: 1 })} disabled={game.throws.length >= 3 || game.bust || onlineStatus === 'matched' && game.active !== onlineSeat}>MISS</button><label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div></> : mode === 'robo' && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : null}
+            {mode === 'match' && game.match!.stage === 'cork' ? <div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div> : game.bust || game.throws.length === 3 ? <p className="auto-change-message" aria-live="polite">{game.bust ? 'BUST · 次のプレイヤーへ' : '3本投げ終わり · 次のプレイヤーへ'}</p> : (mode !== 'robo' || game.active === 0) ? <><button className="primary-button next-turn" disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => apply('next')}>ターンを終了 <span>→</span></button><div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<button onClick={() => apply({ base: 0, ratio: 1 })} disabled={game.throws.length >= 3 || game.bust || onlineStatus === 'matched' && game.active !== onlineSeat}>MISS</button><label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div></> : mode === 'robo' && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : null}
             <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
           </>}
         </div>
