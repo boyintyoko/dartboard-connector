@@ -20,6 +20,7 @@ export type MatchState = {
   choiceOwner: number | null
   choiceAs: 'first' | 'game' | null
 }
+export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string }
 export type RoundStats = { points: number; marks: number; rounds: number }
 export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; winner: number | null; eligible: boolean }
 export type Game = {
@@ -28,6 +29,8 @@ export type Game = {
   statsTotals: RoundStats[]
   statsFrozen: RoundStats[] | null
   ratingResults: RatingResult[]
+  award?: Award | null
+  turnMarks?: number
   mode: Mode
   legMode: '01' | 'cricket' | null
   match: MatchState | null
@@ -121,7 +124,7 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   match.stage = 'playing'; match.legStarter = starter; match.corkThrows = []; match.choiceOwner = null; match.choiceAs = null
   const players = newPlayers(game.players.map(p => p.name), initial, legMode)
   const leg = match.legModes[match.legIndex]
-  return { ...game, match, legMode, players, initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
+  return { ...game, match, legMode, players, initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, turnMarks: 0, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
 export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01', practiceMode: PracticeMode = 'target'): Game {
   const match: MatchState | null = mode === 'match' ? {
@@ -217,7 +220,7 @@ export function chooseMatchGame(game: Game, legMode: '01' | 'cricket', initial: 
 
 export function throwDart(game: Game, hit: Hit): Game {
   if (game.finished || game.throws.length >= 3 || game.bust || game.mode === 'match' && game.match?.stage !== 'playing') return game
-  let g: Game = { ...game, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
+  let g: Game = { ...game, award: null, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
   const p = g.players[g.active]
   p.darts++
   const value = points(hit, g.bull)
@@ -267,10 +270,19 @@ export function throwDart(game: Game, hit: Hit): Game {
     if (g.practiceMode !== 'half-it' && g.practiceMode !== 'shoot-out') g.message = scored ? `${label(hit)} · +${scored}` : g.practiceMode === 'eagles-eye' ? 'ONLY BULL SCORES' : `${label(hit)} · 0`
   } else if ((g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket') && targets.includes(hit.base)) {
     const before = p.marks[hit.base] || 0
+    const opponentsOpen = g.players.some((other, i) => i !== g.active && (other.marks[hit.base] || 0) < 3)
+    g.turnMarks = (game.turnMarks || 0) + (opponentsOpen ? hit.ratio : Math.min(hit.ratio, Math.max(0, 3 - before)))
     p.marks[hit.base] = Math.min(3, before + hit.ratio)
     const extra = Math.max(0, before + hit.ratio - 3)
     if (g.players.some((other, i) => i !== g.active && (other.marks[hit.base] || 0) < 3)) p.score += extra * hit.base
     if (targets.every(t => p.marks[t] === 3) && g.players.every(other => p.score >= other.score)) { g.finished = true; g.winner = g.active }
+  }
+  if (!g.bust && (g.throws.length === 3 || g.finished)) {
+    const bulls = g.throws.filter(dart => dart.base === 25).length
+    const cricket = g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket'
+    const score = isX01Game(g) ? g.turnStart - p.score : g.mode === 'practice' ? p.score - g.turnStart : 0
+    const title = bulls === 3 ? 'HAT TRICK' : cricket && (g.turnMarks || 0) >= 5 ? `${g.turnMarks} MARKS` : !cricket && score >= 100 && score <= 150 ? 'LOW TON' : bulls === 1 ? 'ONE BULL' : null
+    if (title) g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') ? 'marks' : title === 'LOW TON' ? 'ton' : 'bull', player: p.name }
   }
   g = trackStats(game, g, hit)
   if (g.finished && g.mode !== 'match') g = recordResult(g, g.winner)
@@ -302,5 +314,5 @@ export function nextTurn(game: Game): Game {
     if (game.mode === 'match' && winners.length === 1) return prepareNextLeg(game, winners[0])
     return { ...recordResult(game, winners.length === 1 ? winners[0] : null), finished: true, winner: winners.length === 1 ? winners[0] : null, message: winners.length === 1 ? `${game.players[winners[0]].name} WINS!` : 'DRAW GAME' }
   }
-  return { ...game, active, round, throws: [], bust: false, turnStart: game.players[active].score, practiceRoundHits: 0, message: 'THROW YOUR DARTS' }
+  return { ...game, award: null, turnMarks: 0, active, round, throws: [], bust: false, turnStart: game.players[active].score, practiceRoundHits: 0, message: 'THROW YOUR DARTS' }
 }

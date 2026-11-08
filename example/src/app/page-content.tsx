@@ -5,7 +5,7 @@ import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AccountPanel } from '../components/account-panel'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
+import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Award, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -60,6 +60,18 @@ function GameResults({ game }: { game: Game }) {
       </div>
     </article>)}</div>
   </section>
+}
+
+const AWARD_DURATION = 2400
+function AwardMovie({ award, onSkip }: { award: Award; onSkip: () => void }) {
+  return <div className={`award-movie award-${award.kind}`} role="status" aria-label={`${award.player} · ${award.title}`}>
+    <div className="award-sweep" />
+    <div className="award-burst">{Array.from({length:12},(_,i)=><i key={i} style={{'--ray':`${i*30}deg`} as React.CSSProperties}/>)}</div>
+    <div className="award-content"><small>ROUND AWARD</small>
+      {award.kind === 'marks' ? <div className="award-symbol">{award.title.split(' ')[0]}<span>MARKS</span></div> : <svg className="award-target" viewBox="0 0 180 140" aria-hidden="true"><circle cx="90" cy="70" r="56"/><circle cx="90" cy="70" r="37"/><circle cx="90" cy="70" r="17"/>{(award.title==='HAT TRICK'?[64,90,116]:[90]).map((x,i)=><g key={x} style={{animationDelay:`${i*.12}s`}}><path d={`M ${x} 76 l 22 -38 10 5 -24 35 z`}/><circle cx={x} cy="76" r="4"/></g>)}</svg>}
+      <h2>{award.title}</h2><p>{award.player}</p><div className="award-timer"/></div>
+    <button className="award-skip" onClick={onSkip}>スキップ →</button>
+  </div>
 }
 
 function Board({ onHit, disabled, darts = [], activeTarget }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[]; activeTarget?: number | 'bull' | 'double' | 'triple' }) {
@@ -174,6 +186,26 @@ export const Example = () => {
   const [videoConnectionState, setVideoConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
   const [relayConfigured, setRelayConfigured] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [dismissedAward, setDismissedAward] = useState<string | null>(null)
+  const awardPlaying = !!game?.award && game.award.id !== dismissedAward
+  const awardPlayingRef = useRef(false); awardPlayingRef.current = awardPlaying
+  useEffect(() => {
+    const award = game?.award
+    if (!award) return
+    const timer = window.setTimeout(() => setDismissedAward(award.id), AWARD_DURATION)
+    const context = audio.current
+    if (context && soundRef.current && context.state === 'running') {
+      ;[523,659,784,1047].forEach((frequency,index) => {
+        const start = context.currentTime + index * .12
+        const oscillator = context.createOscillator(), gain = context.createGain()
+        oscillator.type = 'sine'; oscillator.frequency.value = frequency
+        gain.gain.setValueAtTime(0,start); gain.gain.linearRampToValueAtTime(.065,start+.025); gain.gain.exponentialRampToValueAtTime(.001,start+.3)
+        oscillator.connect(gain); gain.connect(context.destination); oscillator.start(start); oscillator.stop(start+.32)
+        oscillator.onended = () => { oscillator.disconnect(); gain.disconnect() }
+      })
+    }
+    return () => window.clearTimeout(timer)
+  }, [game?.award?.id])
   const autoChangedTurn = useRef<Game | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
@@ -325,7 +357,7 @@ export const Example = () => {
   }, [onlineStatus, playSound, onlineSeat])
   const apply = useCallback((action: 'next' | Hit) => {
     const previous = gameRef.current
-    if (!previous || previous.finished) return
+    if (!previous || previous.finished || awardPlayingRef.current) return
     if (onlineStatus === 'matched' && previous.active !== onlineSeat) return
     if (onlineStatus === 'matched' && onlineSeat === 1) {
       onlineSocket.current?.emit('match:action', { type: 'throw', action: action === 'next' ? { type: 'next' } : action })
@@ -335,7 +367,7 @@ export const Example = () => {
     commitGame(previous, next, action === 'next' ? undefined : action)
   }, [commitGame, onlineSeat, onlineStatus])
   const requestMatchDecision = (type: 'first' | 'choose' | 'select-game' | 'cork-winner', value: 'first' | 'game' | '01' | 'cricket' | number) => {
-    if (!game) return
+    if (!game || awardPlayingRef.current) return
     if (isRoboGame(game) && game.active === 1) return
     if (onlineStatus === 'matched' && game.active !== onlineSeat) return
     if (onlineStatus === 'matched' && onlineSeat === 1) {
@@ -429,7 +461,7 @@ export const Example = () => {
     })
     socket.on('match:action', (request: { type: 'throw' | 'decision'; action?: Hit | { type: 'next' }; decision?: 'first' | 'choose' | 'select-game' | 'cork-winner'; value?: 'first' | 'game' | '01' | 'cricket' | number; seat: number }) => {
       const previous = gameRef.current
-      if (!previous || previous.finished || previous.active !== request.seat) return
+      if (!previous || previous.finished || previous.active !== request.seat || awardPlayingRef.current) return
       let next: Game
       if (request.type === 'throw') {
         const action = request.action!
@@ -473,7 +505,7 @@ export const Example = () => {
     if (remoteStream) void remoteVideo.current.play().catch(() => {})
   }, [remoteStream, remoteVideoActive])
   useEffect(() => {
-    if (!game || !isRoboGame(game) || game.active !== 1 || game.finished || game.bust || game.throws.length >= 3 || game.match?.stage === 'cork-tie') return
+    if (awardPlaying || !game || !isRoboGame(game) || game.active !== 1 || game.finished || game.bust || game.throws.length >= 3 || game.match?.stage === 'cork-tie') return
     const timer = window.setTimeout(() => {
       const previous = gameRef.current
       if (!previous || !isRoboGame(previous) || previous.active !== 1 || previous.finished || previous.match?.stage === 'cork-tie') return
@@ -506,9 +538,9 @@ export const Example = () => {
       commitGame(previous, throwDart(previous, hit), hit)
     }, game.throws.length ? 1100 : 900)
     return () => window.clearTimeout(timer)
-  }, [game, difficulty, commitGame])
+  }, [game, difficulty, commitGame, awardPlaying])
   useEffect(() => {
-    if (!game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
+    if (awardPlaying || !game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
     if (onlineStatus === 'matched' && onlineSeat !== 0) return
     if ((!game.bust && game.throws.length !== 3) || autoChangedTurn.current === game) return
     const completedTurn = game
@@ -517,9 +549,9 @@ export const Example = () => {
       if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
       autoChangedTurn.current = completedTurn
       commitGame(current, nextTurn(current))
-    }, isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
+    }, game.award ? 180 : isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
     return () => window.clearTimeout(timer)
-  }, [game, onlineStatus, onlineSeat, commitGame])
+  }, [game, onlineStatus, onlineSeat, commitGame, awardPlaying])
 
   const connect = async () => {
     if (!('bluetooth' in navigator)) { setError('BluetoothはChrome / Edgeで、localhostまたはHTTPSから利用できます。'); return }
@@ -552,6 +584,7 @@ export const Example = () => {
   const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
 
   return <main className="app-shell">
+    {awardPlaying && game?.award && <AwardMovie key={game.award.id} award={game.award} onSkip={() => setDismissedAward(game.award!.id)}/>}
     <header className="topbar">
       <button className="wordmark" onClick={goHome}><span className="mark">D</span><span>DARTS<small>ROOM</small></span></button>
       <div className="board-status"><span className={`status-dot ${connected ? 'online' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected ? disconnect : connect}>{connecting ? '接続中…' : connected ? '切断' : 'Bluetooth接続'}</button></div>
