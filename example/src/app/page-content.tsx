@@ -45,6 +45,7 @@ export const Example = () => {
   const onlineSocket = useRef<Socket | null>(null)
   const onlineSeatRef = useRef<number | null>(null)
   const peerConnection = useRef<RTCPeerConnection | null>(null)
+  const peerConnectionPending = useRef<Promise<RTCPeerConnection> | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([])
   const localVideo = useRef<HTMLVideoElement | null>(null)
@@ -75,6 +76,8 @@ export const Example = () => {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [remoteVideoActive, setRemoteVideoActive] = useState(false)
+  const [videoConnectionState, setVideoConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
+  const [relayConfigured, setRelayConfigured] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const autoChangedTurn = useRef<Game | null>(null)
   onlineSeatRef.current = onlineSeat
@@ -83,26 +86,47 @@ export const Example = () => {
   const modeInfo = modes.find(item => item.id === mode)!
   const activePlayer = game?.players[game.active]
 
-  const ensurePeerConnection = () => {
+  const ensurePeerConnection = async () => {
     if (peerConnection.current) return peerConnection.current
+    if (peerConnectionPending.current) return peerConnectionPending.current
     if (typeof RTCPeerConnection === 'undefined') throw new Error('このブラウザーはWebRTCに対応していません。')
-    const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] })
-    peer.addTransceiver('video', { direction: 'sendrecv' })
-    peer.onicecandidate = event => {
-      if (event.candidate) onlineSocket.current?.emit('match:signal', { type: 'candidate', candidate: event.candidate.toJSON() })
-    }
-    peer.ontrack = event => {
-      const stream = event.streams[0] || new MediaStream([event.track])
-      setRemoteStream(stream)
-      setRemoteVideoActive(!event.track.muted)
-      event.track.onunmute = () => setRemoteVideoActive(true)
-      event.track.onmute = () => setRemoteVideoActive(false)
-    }
-    peerConnection.current = peer
-    return peer
+    const pending = (async () => {
+      let iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
+      const socket = onlineSocket.current
+      if (socket?.connected) {
+        const config = await new Promise<{ iceServers?: RTCIceServer[] } | null>(resolve => {
+          socket.timeout(5000).emit('match:ice-servers', (cause: Error | null, response: { iceServers?: RTCIceServer[] } | undefined) => resolve(cause ? null : response || null))
+        })
+        if (config?.iceServers?.length) iceServers = config.iceServers
+      }
+      setRelayConfigured(iceServers.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => /^(turn|turns):/i.test(url))))
+      const peer = new RTCPeerConnection({ iceServers })
+      peer.addTransceiver('video', { direction: 'sendrecv' })
+      peer.onicecandidate = event => {
+        if (event.candidate) onlineSocket.current?.emit('match:signal', { type: 'candidate', candidate: event.candidate.toJSON() })
+      }
+      peer.onconnectionstatechange = () => {
+        if (peer.connectionState === 'connected') setVideoConnectionState('connected')
+        else if (peer.connectionState === 'failed') setVideoConnectionState('failed')
+        else if (peer.connectionState === 'connecting' || peer.connectionState === 'disconnected') setVideoConnectionState('connecting')
+        else if (peer.connectionState === 'closed') setVideoConnectionState('idle')
+      }
+      peer.onicecandidateerror = event => setCameraError(`映像ネットワーク候補を取得できませんでした (ICE ${event.errorCode})`)
+      peer.ontrack = event => {
+        const stream = event.streams[0] || new MediaStream([event.track])
+        setRemoteStream(stream)
+        setRemoteVideoActive(!event.track.muted)
+        event.track.onunmute = () => setRemoteVideoActive(true)
+        event.track.onmute = () => setRemoteVideoActive(false)
+      }
+      peerConnection.current = peer
+      return peer
+    })()
+    peerConnectionPending.current = pending
+    try { return await pending } finally { if (peerConnectionPending.current === pending) peerConnectionPending.current = null }
   }
   const makeVideoOffer = async () => {
-    const peer = ensurePeerConnection()
+    const peer = await ensurePeerConnection()
     if (peer.signalingState !== 'stable') return
     const offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
@@ -113,10 +137,13 @@ export const Example = () => {
     localStreamRef.current = null
     peerConnection.current?.close()
     peerConnection.current = null
+    peerConnectionPending.current = null
     pendingCandidates.current = []
     setLocalStream(null)
     setRemoteStream(null)
     setRemoteVideoActive(false)
+    setVideoConnectionState('idle')
+    setRelayConfigured(false)
     setCameraError('')
   }
   const toggleCamera = async () => {
@@ -133,7 +160,7 @@ export const Example = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' }, audio: false })
       const track = stream.getVideoTracks()[0]
-      const peer = ensurePeerConnection()
+      const peer = await ensurePeerConnection()
       const transceiver = peer.getTransceivers().find(item => item.receiver.track.kind === 'video')
       if (transceiver) await transceiver.sender.replaceTrack(track)
       else peer.addTrack(track, stream)
@@ -260,12 +287,7 @@ export const Example = () => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
       setOnlineStatus('matched')
       setOnlineSelectionOpen(false)
-      try {
-        ensurePeerConnection()
-        if (match.seat === 0) void makeVideoOffer().catch(cause => setCameraError(cause instanceof Error ? cause.message : '映像接続を開始できませんでした。'))
-      } catch (cause) {
-        setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。')
-      }
+      void ensurePeerConnection().then(() => match.seat === 0 ? makeVideoOffer() : undefined).catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
       setMode(match.mode)
       setCount(2)
       setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
@@ -286,7 +308,7 @@ export const Example = () => {
     })
     socket.on('match:signal', async (signal: MatchSignal) => {
       try {
-        const peer = ensurePeerConnection()
+        const peer = await ensurePeerConnection()
         if (signal.type === 'offer') {
           if (onlineSeatRef.current !== 1) return
           await peer.setRemoteDescription(new RTCSessionDescription(signal.description))
@@ -459,9 +481,9 @@ export const Example = () => {
       {onlineStatus === 'matched' && <div className="match-video-panel">
         <div className="match-video-feeds">
           <div className="match-video-feed"><div className="match-video-frame">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>あなたのカメラはオフです</span>}<small>YOU</small></div></div>
-          <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
+          <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{videoConnectionState === 'failed' ? '映像接続に失敗しました · 別のネットワークをお試しください' : videoConnectionState !== 'connected' ? '相手と映像を接続中…' : remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
         </div>
-        <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small></div>
+        <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN中継を利用できます' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
       <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>

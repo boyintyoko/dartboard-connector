@@ -63,6 +63,12 @@ try {
   const relayedCandidate = new Promise(resolve => cricketAgain.once('match:signal', resolve))
   random.emit('match:signal', { type: 'candidate', candidate: { candidate: 'candidate:relay-test', sdpMid: '0', sdpMLineIndex: 0 } })
   assert.deepEqual(await relayedCandidate, { type: 'candidate', candidate: { candidate: 'candidate:relay-test', sdpMid: '0', sdpMLineIndex: 0 } })
+  const previousIceServers = process.env.WEBRTC_ICE_SERVERS
+  process.env.WEBRTC_ICE_SERVERS = JSON.stringify([{ urls: 'turn:turn.example.test:443', username: 'match-user', credential: 'short-lived-credential' }])
+  const iceConfig = await new Promise((resolve, reject) => random.timeout(1000).emit('match:ice-servers', (error, response) => error ? reject(error) : resolve(response)))
+  assert.deepEqual(iceConfig, { iceServers: [{ urls: 'turn:turn.example.test:443', username: 'match-user', credential: 'short-lived-credential' }] })
+  if (previousIceServers === undefined) delete process.env.WEBRTC_ICE_SERVERS
+  else process.env.WEBRTC_ICE_SERVERS = previousIceServers
   console.log('Matchmaking modes and WebRTC signaling passed')
 } finally {
   for (const socket of clients) socket.disconnect()

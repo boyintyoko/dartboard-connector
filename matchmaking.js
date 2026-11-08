@@ -2,6 +2,44 @@ export function attachMatchmaking(io) {
   const queue = []
   const matches = new Map()
   const modes = ['01', 'cricket', 'match']
+  const defaultIceServers = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
+  let cachedIceServers = null
+  let cachedIceServersUntil = 0
+  let iceServersRequest = null
+
+  function parseIceServers(value) {
+    try {
+      const configured = typeof value === 'string' ? JSON.parse(value) : value
+      if (Array.isArray(configured) && configured.length > 0 && configured.length <= 16 && configured.every(server => {
+        const urls = typeof server?.urls === 'string' ? [server.urls] : server?.urls
+        return Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && /^(stun|stuns|turn|turns):/i.test(url) && url.length <= 512)
+          && (server.username === undefined || typeof server.username === 'string')
+          && (server.credential === undefined || typeof server.credential === 'string')
+      })) return configured
+    } catch { /* Fall back to public STUN servers when no TURN service is configured. */ }
+    return null
+  }
+
+  async function getIceServers() {
+    const directConfig = parseIceServers(process.env.WEBRTC_ICE_SERVERS)
+    if (directConfig) return { iceServers: directConfig }
+    const endpoint = process.env.WEBRTC_TURN_CREDENTIALS_URL
+    if (!endpoint) return { iceServers: defaultIceServers }
+    try { if (new URL(endpoint).protocol !== 'https:') return { iceServers: defaultIceServers } } catch { return { iceServers: defaultIceServers } }
+    if (cachedIceServers && Date.now() < cachedIceServersUntil) return { iceServers: cachedIceServers }
+    if (!iceServersRequest) {
+      iceServersRequest = (async () => {
+        const response = await fetch(endpoint, { signal: AbortSignal.timeout(5000) })
+        if (!response.ok) throw new Error(`TURN credentials endpoint returned ${response.status}`)
+        const parsed = parseIceServers(await response.json())
+        if (!parsed) throw new Error('TURN credentials response did not contain valid ICE servers')
+        cachedIceServers = parsed
+        cachedIceServersUntil = Date.now() + 60_000
+        return parsed
+      })().catch(() => null).finally(() => { iceServersRequest = null })
+    }
+    return { iceServers: await iceServersRequest || defaultIceServers }
+  }
 
   function removeFromQueue(id) {
     const index = queue.findIndex(entry => entry.id === id)
@@ -57,6 +95,11 @@ export function attachMatchmaking(io) {
     socket.on('queue:leave', () => {
       removeFromQueue(socket.id)
       socket.emit('queue:left')
+    })
+    socket.on('match:ice-servers', acknowledge => {
+      const room = socket.data.matchRoom
+      if (!room || !matches.get(room)?.ids.includes(socket.id) || typeof acknowledge !== 'function') return
+      void getIceServers().then(config => acknowledge(config))
     })
     socket.on('match:state', state => {
       const room = socket.data.matchRoom
