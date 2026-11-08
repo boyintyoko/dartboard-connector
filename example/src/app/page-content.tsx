@@ -16,6 +16,24 @@ const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: 
 const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 
+function GameResults({ game }: { game: Game }) {
+  const cricket = game.mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket'
+  const practice = game.mode === 'practice'
+  const match = game.mode === 'match' && game.match
+  const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
+  return <section className="results-panel" aria-label="ゲーム結果">
+    <header className="results-heading"><div className="kicker">FINAL RESULTS</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small> · FINAL LEG</small></p>}</header>
+    <div className="results-players">{game.players.map((player, index) => <article className={`result-player ${game.winner === index ? 'winner' : ''}`} key={index}>
+      <div className="result-player-heading"><span>P{index + 1}</span><strong>{player.name}</strong><em>{game.winner === index ? 'WINNER' : game.winner === null ? 'DRAW' : 'FINISH'}</em></div>
+      <div className="result-main-score"><small>{practice ? 'TARGET HITS' : cricket ? game.players.length === 1 ? 'TARGETS CLOSED' : 'CRICKET SCORE' : match ? 'FINAL LEG · REMAINING' : 'REMAINING SCORE'}</small><b>{practice ? `${game.practiceHits} / ${player.darts}` : cricket && game.players.length === 1 ? `${closedTargets(player)} / ${targets.length}` : player.score}</b></div>
+      <div className="result-stats">
+        <div><small>{match ? 'DARTS · FINAL LEG' : 'DARTS THROWN'}</small><strong>{player.darts}</strong></div>
+        {cricket ? <><div><small>TARGETS CLOSED</small><strong>{closedTargets(player)} / {targets.length}</strong></div><div><small>TOTAL MARKS</small><strong>{targets.reduce((sum, target) => sum + (player.marks[target] || 0), 0)}</strong></div>{game.players.length > 1 && <div><small>CRICKET POINTS</small><strong>{player.score}</strong></div>}</> : practice ? <div><small>HIT RATE</small><strong>{player.darts ? `${Math.round(game.practiceHits / player.darts * 100)}%` : '—'}</strong></div> : <><div><small>POINTS SCORED</small><strong>{player.points}</strong></div><div><small>PPD</small><strong>{player.darts ? (player.points / player.darts).toFixed(1) : '—'}</strong></div>{match && <div><small>MATCH LEGS</small><strong>{match.legWins[index]}</strong></div>}</>}
+      </div>
+    </article>)}</div>
+  </section>
+}
+
 function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[] }) {
   const xy = (r: number, a: number) => `${200 + r * Math.sin(a)},${200 - r * Math.cos(a)}`
   const dartPosition = (hit: Hit, dartIndex: number) => {
@@ -524,8 +542,8 @@ export const Example = () => {
         <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN中継を利用できます' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
-      <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>
-      {game.finished ? <div className="finish-card"><div className="kicker">GAME COMPLETE</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2><button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div> : <div className="play-layout">
+      {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
+      {game.finished ? <><GameResults game={game}/><div className="finish-card"><button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div></> : <div className="play-layout">
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${mode === 'robo' && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? `${game.practiceHits}` : activePlayer?.score}</div>
