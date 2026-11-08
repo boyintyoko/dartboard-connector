@@ -20,7 +20,7 @@ export type MatchState = {
   choiceOwner: number | null
   choiceAs: 'first' | 'game' | null
 }
-export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string }
+export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string }
 export type Game = {
   award?: Award | null
   turnMarks?: number
@@ -239,8 +239,21 @@ export function throwDart(game: Game, hit: Hit): Game {
     const bulls = g.throws.filter(dart => dart.base === 25).length
     const cricket = g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket'
     const score = isX01Game(g) ? g.turnStart - p.score : g.mode === 'practice' ? p.score - g.turnStart : 0
-    const title = bulls === 3 ? 'HAT TRICK' : cricket && (g.turnMarks || 0) >= 5 ? `${g.turnMarks} MARKS` : !cricket && score >= 100 && score <= 150 ? 'LOW TON' : bulls === 1 ? 'ONE BULL' : null
-    if (title) g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') ? 'marks' : title === 'LOW TON' ? 'ton' : 'bull', player: p.name }
+    const three = g.throws.length === 3
+    const available = !cricket || g.turnMarks === g.throws.reduce((sum, dart) => sum + dart.ratio, 0)
+    const black = three && g.throws.every(dart => dart.base === 25 && dart.ratio === 2)
+    const ton80 = available && three && g.throws.every(dart => dart.base === 20 && dart.ratio === 3)
+    const horse = cricket && g.turnMarks === 9 && three && g.throws.every(dart => dart.base >= 15 && dart.base <= 20 && dart.ratio === 3) && new Set(g.throws.map(dart => dart.base)).size === 3
+    const bed = available && three && g.throws[0].base !== 25 && g.throws[0].base !== 0 && g.throws[0].ratio >= 2 && g.throws.every(dart => dart.base === g.throws[0].base && dart.ratio === g.throws[0].ratio)
+    const title = black ? 'THREE IN THE BLACK' : ton80 ? 'TON80' : bulls === 3 ? 'HAT TRICK' : horse ? 'WHITE HORSE' : bed ? 'THREE IN A BED' : cricket && (g.turnMarks || 0) >= 5 ? `${g.turnMarks} MARKS` : !cricket && score >= 151 && score <= 177 ? 'HIGH TON' : !cricket && score >= 100 && score <= 150 ? 'LOW TON' : bulls === 1 ? 'ONE BULL' : null
+    const calls: Record<string, string> = {
+      'ONE BULL':'ナイスワン！', 'LOW TON':'ナイストン！', 'HAT TRICK':'ナイスハット！',
+      'THREE IN A BED':'ナイスベッド！', 'HIGH TON':'ナイスハイトン！', 'TON80':'ナイストンパ！',
+      'WHITE HORSE':'ナイスホース！', 'THREE IN THE BLACK':'ナイスブラック！',
+      '5 MARKS':'ナイスファイブマーク！', '6 MARKS':'ナイスシックスマーク！', '7 MARKS':'ナイスセブンマーク！', '8 MARKS':'ナイスエイトマーク！', '9 MARKS':'ナイスナインマーク！',
+    }
+    if (title) g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') || horse ? 'marks' : title.includes('TON') ? 'ton' : 'bull', player: p.name, call: calls[title] }
+
   }
   if (g.finished && g.mode === 'match' && g.winner !== null) return prepareNextLeg(g, g.winner)
   if (g.finished) g.message = `${p.name} WINS!`
