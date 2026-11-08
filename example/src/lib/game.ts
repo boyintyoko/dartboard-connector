@@ -3,6 +3,7 @@ export type Hit = { base: number; ratio: number }
 export type OutRule = 'master' | 'double' | 'open'
 export type MatchLegMode = '01' | 'cricket' | 'choice'
 export type MatchLeadRule = 'loser' | 'alternate'
+export type PracticeMode = 'target' | 'count-up' | 'cricket-count-up' | 'eagles-eye' | 'half-it' | 'shoot-out'
 export type MatchStage = 'cork' | 'cork-tie' | 'choice' | 'playing' | 'finished'
 export type Player = { name: string; score: number; marks: Record<number, number>; darts: number; points: number }
 export type MatchState = {
@@ -37,8 +38,23 @@ export type Game = {
   outRule: OutRule
   practiceTarget: number
   practiceHits: number
+  practiceMode: PracticeMode
+  practiceRoundHits: number
+  practiceOpened: number[]
 }
 export const targets = [20, 19, 18, 17, 16, 15, 25]
+export const practiceTargets = [20, 19, 18, 17, 16, 15, 25]
+export const halfItTargets = ['15', '16', 'D', '17', '18', 'T', '19', '20', 'BULL'] as const
+export const practiceTargetForRound = (game: Game) => {
+  if (game.practiceMode === 'cricket-count-up') return practiceTargets[Math.min(game.round - 1, practiceTargets.length - 1)]
+  if (game.practiceMode === 'half-it') return halfItTargets[game.round - 1] || 'FINISH'
+  if (game.practiceMode === 'shoot-out') return game.practiceOpened.length < 20 ? 'OPEN A NEW NUMBER' : 'BULL BONUS'
+  if (game.practiceMode === 'eagles-eye') return 'BULL'
+  return game.practiceTarget === 25 ? 'BULL' : String(game.practiceTarget)
+}
+export const practiceModeTitle: Record<PracticeMode, string> = {
+  target: 'TARGET PRACTICE', 'count-up': 'COUNT-UP', 'cricket-count-up': 'CRICKET COUNT-UP', 'eagles-eye': "EAGLE’S EYE", 'half-it': 'HALF-IT', 'shoot-out': 'SHOOT OUT',
+}
 export const isX01 = (mode: Mode | 'choice') => mode === '01' || mode === 'match' || mode === 'robo'
 export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 'robo' ? game.legMode === '01' : isX01(game.mode)
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
@@ -54,7 +70,7 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   const leg = match.legModes[match.legIndex]
   return { ...game, match, legMode, players, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
-export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01'): Game {
+export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01', practiceMode: PracticeMode = 'target'): Game {
   const match: MatchState | null = mode === 'match' ? {
     bestOf,
     initial,
@@ -63,9 +79,10 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   } : null
   const gameMode = mode === 'cricket' || mode === 'robo' && roboMode === 'cricket' ? 'cricket' : '01'
   const players = newPlayers(names, initial, gameMode)
+  if (mode === 'practice' && practiceMode === 'half-it' && players[0]) players[0].score = 40
   const game: Game = {
-    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0,
-    players, active: 0, round: 1, limit: gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
+    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
+    players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
     message: mode === 'match' ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
   }
@@ -162,8 +179,37 @@ export function throwDart(game: Game, hit: Hit): Game {
       }
     }
   } else if (g.mode === 'practice') {
-    if (hit.base === g.practiceTarget) g.practiceHits++
-    p.points += value
+    let scored = 0
+    if (g.practiceMode === 'target') {
+      if (hit.base === g.practiceTarget) { g.practiceHits++; scored = value }
+    } else if (g.practiceMode === 'count-up') {
+      scored = value
+    } else if (g.practiceMode === 'cricket-count-up') {
+      const currentTarget = practiceTargets[Math.min(g.round - 1, practiceTargets.length - 1)]
+      if (hit.base === currentTarget) { g.practiceHits++; scored = value }
+    } else if (g.practiceMode === 'eagles-eye') {
+      if (hit.base === 25) { g.practiceHits++; scored = hit.ratio === 2 ? 50 : 25 }
+    } else if (g.practiceMode === 'half-it') {
+      const current = halfItTargets[g.round - 1]
+      const valid = current === 'D' ? hit.ratio === 2 : current === 'T' ? hit.ratio === 3 : current === 'BULL' ? hit.base === 25 : hit.base === Number(current)
+      if (valid) { g.practiceHits++; g.practiceRoundHits++; scored = value }
+    } else if (g.practiceMode === 'shoot-out') {
+      const openedNumbers = g.practiceOpened.filter(n => n !== 25).length
+      const alreadyOpened = hit.base === 25 ? openedNumbers < 20 || g.practiceOpened.filter(n => n === 25).length >= 3 : g.practiceOpened.includes(hit.base)
+      if (hit.base > 0 && !alreadyOpened && (openedNumbers < 20 || hit.base === 25)) {
+        g.practiceOpened.push(hit.base)
+        g.practiceHits++
+        scored = value * g.practiceOpened.length
+      }
+    }
+    p.score += scored
+    p.points += scored
+    if (g.practiceMode === 'half-it' && g.throws.length === 3) {
+      if (g.practiceRoundHits === 0) p.score = Math.floor(p.score / 2)
+      g.message = g.practiceRoundHits === 0 ? 'HALF-IT · SCORE HALVED' : `HIT ${g.practiceRoundHits} TARGET${g.practiceRoundHits === 1 ? '' : 'S'}`
+    }
+    if (g.practiceMode === 'shoot-out' && g.practiceOpened.filter(n => n !== 25).length === 20 && g.practiceOpened.filter(n => n === 25).length === 3) { g.finished = true; g.winner = g.active }
+    if (g.practiceMode !== 'half-it' && g.practiceMode !== 'shoot-out') g.message = scored ? `${label(hit)} · +${scored}` : g.practiceMode === 'eagles-eye' ? 'ONLY BULL SCORES' : `${label(hit)} · 0`
   } else if ((g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket') && targets.includes(hit.base)) {
     const before = p.marks[hit.base] || 0
     p.marks[hit.base] = Math.min(3, before + hit.ratio)
@@ -179,6 +225,9 @@ export function throwDart(game: Game, hit: Hit): Game {
 
 export function nextTurn(game: Game): Game {
   if (game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return game
+  if (game.mode === 'practice' && game.practiceMode !== 'target' && game.throws.length > 0 && game.active === 0 && game.round >= game.limit) {
+    return { ...game, finished: true, winner: 0, message: 'PRACTICE COMPLETE' }
+  }
   const active = (game.active + 1) % game.players.length
   const round = game.round + (active === 0 ? 1 : 0)
   if (game.limit > 0 && round > game.limit) {
@@ -188,5 +237,5 @@ export function nextTurn(game: Game): Game {
     if (game.mode === 'match' && winners.length === 1) return prepareNextLeg(game, winners[0])
     return { ...game, finished: true, winner: winners.length === 1 ? winners[0] : null, message: winners.length === 1 ? `${game.players[winners[0]].name} WINS!` : 'DRAW GAME' }
   }
-  return { ...game, active, round, throws: [], bust: false, turnStart: game.players[active].score, message: 'THROW YOUR DARTS' }
+  return { ...game, active, round, throws: [], bust: false, turnStart: game.players[active].score, practiceRoundHits: 0, message: 'THROW YOUR DARTS' }
 }
