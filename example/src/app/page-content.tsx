@@ -249,9 +249,10 @@ export const Example = () => {
 
     {screen === 'home' && <>
       <section className="welcome"><div><div className="kicker">HOME DARTS · LOCAL PLAY</div><h1>今日の一本を、<span>ここから。</span></h1><p>遊びたいゲームを選んで、スタート。</p></div><div className="welcome-orbit">D<span>●</span></div></section>
-      <section className="random-match-panel"><div><span className="kicker">ONLINE · RANDOM MATCH</span><strong>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を探しています…' : '実ユーザーとランダム対戦'}</strong><small>相手が見つかると、01・CRICKET・MATCHからランダムにゲームが決まります。</small></div><button onClick={findRandomOpponent} disabled={onlineStatus === 'connecting'}>{onlineStatus === 'searching' ? 'キャンセル' : 'ランダム対戦を探す'} <span>→</span></button></section>
-      <section className="mode-section"><div className="section-heading"><div><span className="kicker">CHOOSE YOUR GAME</span><h2>GAME SELECT</h2></div><span className="local-tag">● LOCAL PLAY</span></div>
-        <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}</div>
+      <section className="mode-section"><div className="section-heading"><div><span className="kicker">CHOOSE YOUR GAME</span><h2>GAME SELECT</h2></div><span className="local-tag">● LOCAL + ONLINE</span></div>
+        <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}
+          <button className="game-card online-card" onClick={findRandomOpponent} disabled={onlineStatus === 'connecting'} aria-label={onlineStatus === 'searching' ? 'オンライン対戦をキャンセル' : 'オンラインランダムマッチを探す'}><span className="card-icon">◎</span><span className="card-arrow">{onlineStatus === 'searching' ? '×' : '↗'}</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を検索中 · タップでキャンセル' : '実ユーザーとランダム対戦'}</small></span></button>
+        </div>
       </section>
       <section className="home-note"><span>01</span><p>Bluetoothボードまたは画面入力に対応。</p><span>PLAY AT HOME</span></section>
     </>}
