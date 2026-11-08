@@ -40,7 +40,7 @@ export type Game = {
 }
 export const targets = [20, 19, 18, 17, 16, 15, 25]
 export const isX01 = (mode: Mode | 'choice') => mode === '01' || mode === 'match' || mode === 'robo'
-export const isX01Game = (game: Game) => game.mode === 'match' ? game.legMode === '01' : isX01(game.mode)
+export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 'robo' ? game.legMode === '01' : isX01(game.mode)
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
 export const points = (hit: Hit, bull: Game['bull']) => hit.base === 25 && bull === 'fat' ? 50 : hit.base * hit.ratio
 
@@ -54,17 +54,18 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   const leg = match.legModes[match.legIndex]
   return { ...game, match, legMode, players, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
-export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser'): Game {
+export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01'): Game {
   const match: MatchState | null = mode === 'match' ? {
     bestOf,
     initial,
     legModes: bestOf === 3 ? ['01', 'cricket', 'choice'] : ['01', 'cricket', 'cricket', '01', 'choice'],
     legIndex: 0, legWins: [0, 0], leadRule, stage: 'cork', corkPurpose: 'opening', corkThrows: [], legStarter: 0, choiceOwner: null, choiceAs: null,
   } : null
-  const players = newPlayers(names, initial, mode === 'cricket' ? 'cricket' : '01')
+  const gameMode = mode === 'cricket' || mode === 'robo' && roboMode === 'cricket' ? 'cricket' : '01'
+  const players = newPlayers(names, initial, gameMode)
   const game: Game = {
-    mode, legMode: mode === 'match' ? '01' : null, match, bull, outRule, practiceTarget, practiceHits: 0,
-    players, active: 0, round: 1, limit: mode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
+    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0,
+    players, active: 0, round: 1, limit: gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
     message: mode === 'match' ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
   }
@@ -163,7 +164,7 @@ export function throwDart(game: Game, hit: Hit): Game {
   } else if (g.mode === 'practice') {
     if (hit.base === g.practiceTarget) g.practiceHits++
     p.points += value
-  } else if ((g.mode === 'cricket' || g.mode === 'match' && g.legMode === 'cricket') && targets.includes(hit.base)) {
+  } else if ((g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket') && targets.includes(hit.base)) {
     const before = p.marks[hit.base] || 0
     p.marks[hit.base] = Math.min(3, before + hit.ratio)
     const extra = Math.max(0, before + hit.ratio - 3)

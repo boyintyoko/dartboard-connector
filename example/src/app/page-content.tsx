@@ -17,7 +17,7 @@ const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9,
 type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 
 function GameResults({ game }: { game: Game }) {
-  const cricket = game.mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket'
+  const cricket = game.mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
   const practice = game.mode === 'practice'
   const match = game.mode === 'match' && game.match
   const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
@@ -120,6 +120,7 @@ export const Example = () => {
   const [bull, setBull] = useState<'fat' | 'split'>('fat')
   const [practiceTarget, setPracticeTarget] = useState(20)
   const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL')
+  const [roboGameMode, setRoboGameMode] = useState<'01' | 'cricket'>('01')
   const [sound, setSound] = useState(true)
   const [manual, setManual] = useState(false)
   const [game, setGame] = useState<Game | null>(null)
@@ -440,7 +441,16 @@ export const Example = () => {
       let next = previous
       for (let dart = 0; dart < 3; dart++) {
         const level = difficulty === 'HARD' ? 0.68 : difficulty === 'NORMAL' ? 0.43 : 0.2
-        const hit: Hit = Math.random() < level ? { base: 20, ratio: Math.random() < level * .55 ? 3 : 1 } : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
+        const cricket = previous.legMode === 'cricket'
+        const own = next.players[1], opponent = next.players[0]
+        const target = cricket
+          ? targets.find(number => (own.marks[number] || 0) < 3 || (opponent.marks[number] || 0) < 3 && own.score < opponent.score) ?? 20
+          : 20
+        const canHit = Math.random() < level
+        const ratio = target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
+        const hit: Hit = cricket
+          ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
+          : canHit ? { base: 20, ratio: Math.random() < level * .55 ? 3 : 1 } : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
         next = throwDart(next, hit)
         if (next.finished) break
       }
@@ -485,7 +495,7 @@ export const Example = () => {
     try { if (!audio.current) audio.current = new AudioContext() } catch { /* Sound is optional. */ }
     void audio.current?.resume().catch(() => {})
     const players = mode === 'robo' ? [names[0], `ROBO · ${difficulty}`] : mode === 'practice' ? [names[0]] : names.slice(0, count)
-    const next = createGame(mode, players, initial, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
+    const next = createGame(mode, players, initial, bull, outRule, practiceTarget, matchBestOf, matchLeadRule, roboGameMode)
     gameRef.current = next; setGame(next); setHistory([]); setScreen('game')
   }
   const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
@@ -519,8 +529,9 @@ export const Example = () => {
       <button className="back-link" onClick={() => setScreen('home')}>← <span>ゲーム選択へ戻る</span></button>
       <div className="setup-layout"><div className="setup-main"><div className={`mode-emblem ${modeInfo.accent}`}>{modeInfo.icon}</div><div className="kicker">GAME SETUP</div><h1>{modeInfo.title}</h1><p className="setup-description">{modeInfo.subtitle}</p>
         {mode === 'practice' ? <div className="setup-block"><h2>練習するナンバー</h2><div className="target-select">{[20,19,18,17,16,15,25].map(target => <button className={practiceTarget===target?'chosen':''} key={target} onClick={() => setPracticeTarget(target)}>{target===25?'BULL':target}</button>)}</div><p className="setup-hint">狙ったナンバーに入った回数と命中率を記録します。</p></div> : <>
-          {(mode === '01' || mode === 'match' || mode === 'robo') && <div className="setup-block"><h2>スタートスコア</h2><div className="segmented score-options">{(mode === '01' ? [301,501,701,901,1101,1501] : [301,501,701,901]).map(score => <button className={initial===score?'chosen':''} key={score} onClick={() => setInitial(score)}>{score}</button>)}</div></div>}
-          {(mode === '01' || mode === 'match' || mode === 'robo') && <div className="setup-block"><h2>上がり方</h2><div className="segmented"><button className={outRule==='master'?'chosen':''} onClick={() => setOutRule('master')}>MASTER OUT</button><button className={outRule==='double'?'chosen':''} onClick={() => setOutRule('double')}>DOUBLE OUT</button><button className={outRule==='open'?'chosen':''} onClick={() => setOutRule('open')}>OPEN OUT</button></div></div>}
+          {mode === 'robo' && <div className="setup-block"><h2>ゲーム</h2><div className="segmented"><button className={roboGameMode==='01'?'chosen':''} onClick={() => setRoboGameMode('01')}>01</button><button className={roboGameMode==='cricket'?'chosen':''} onClick={() => setRoboGameMode('cricket')}>CRICKET</button></div></div>}
+          {(mode === '01' || mode === 'match' || mode === 'robo' && roboGameMode === '01') && <div className="setup-block"><h2>スタートスコア</h2><div className="segmented score-options">{(mode === '01' ? [301,501,701,901,1101,1501] : [301,501,701,901]).map(score => <button className={initial===score?'chosen':''} key={score} onClick={() => setInitial(score)}>{score}</button>)}</div></div>}
+          {(mode === '01' || mode === 'match' || mode === 'robo' && roboGameMode === '01') && <div className="setup-block"><h2>上がり方</h2><div className="segmented"><button className={outRule==='master'?'chosen':''} onClick={() => setOutRule('master')}>MASTER OUT</button><button className={outRule==='double'?'chosen':''} onClick={() => setOutRule('double')}>DOUBLE OUT</button><button className={outRule==='open'?'chosen':''} onClick={() => setOutRule('open')}>OPEN OUT</button></div></div>}
           {mode === 'match' && <><div className="setup-block"><h2>メドレー</h2><div className="segmented"><button className={matchBestOf===3?'chosen':''} onClick={() => setMatchBestOf(3)}>BEST OF 3 <small>01 · CR · CH</small></button><button className={matchBestOf===5?'chosen':''} onClick={() => setMatchBestOf(5)}>BEST OF 5 <small>01 · CR · CR · 01 · CH</small></button></div><p className="setup-hint">必要勝利数に先に達した時点で終了します。</p></div><div className="setup-block"><h2>2レグ目以降の先攻</h2><div className="segmented"><button className={matchLeadRule==='loser'?'chosen':''} onClick={() => setMatchLeadRule('loser')}>LOSER · 前レグの敗者</button><button className={matchLeadRule==='alternate'?'chosen':''} onClick={() => setMatchLeadRule('alternate')}>ALTERNATE · 交互</button></div></div></>}
           {mode !== 'robo' && <div className="setup-block"><h2>プレイヤー</h2><div className="segmented player-count">{[1,2,3,4].map(n=><button className={count===n?'chosen':''} key={n} onClick={() => setCount(n)}>{n}<small>人</small></button>)}</div>{names.slice(0,count).map((name,i)=><label className="player-name" key={i}><span>P{i+1}</span><input aria-label={`プレイヤー${i+1}`} value={name} maxLength={20} onChange={e=>setNames(old=>old.map((v,j)=>i===j?e.target.value:v))}/></label>)}{mode==='cricket'&&count===1&&<p className="setup-hint">15〜20とBULLをすべてクローズすると終了します。ラウンド制限はありません。</p>}</div>}
           {mode === 'robo' && <div className="setup-block"><h2>CPUレベル</h2><div className="segmented">{(['EASY','NORMAL','HARD'] as const).map(level=><button className={difficulty===level?'chosen':''} key={level} onClick={()=>setDifficulty(level)}>{level}</button>)}</div></div>}
@@ -528,7 +539,7 @@ export const Example = () => {
         </>}
         {mode === 'match' && count<2 && <p className="setup-hint">MATCHは2人以上でプレイします。</p>}
         <button className="primary-button" disabled={mode==='match'&&count<2} onClick={start}>{mode==='practice'?'練習をはじめる':'ゲームをはじめる'} <span>→</span></button>
-      </div><aside className="setup-aside"><div className="aside-label">{mode==='robo'?'VS COMPUTER':mode==='practice'?'PRACTICE TARGET':mode==='cricket'?'CRICKET':mode==='match'?'MATCH MEDLEY':'01 GAME'}</div><div className="aside-number">{mode==='practice'?(practiceTarget===25?'BULL':practiceTarget):initial}</div><div className="aside-rule">{mode==='cricket'?'15 · 16 · 17 · 18 · 19 · 20 · BULL':mode==='practice'?'狙った数字を何度でも練習':mode==='robo'?`YOU  VS  ROBO · ${difficulty}`:mode==='match'?`BEST OF ${matchBestOf} · ${matchBestOf===3?'01 · CR · CH':'01 · CR · CR · 01 · CH'}`:`15 ROUNDS · ${outRule.toUpperCase()}`}</div><div className="aside-board"><Board onHit={()=>{}} disabled /></div></aside></div>
+      </div><aside className="setup-aside"><div className="aside-label">{mode==='robo'?'VS COMPUTER':mode==='practice'?'PRACTICE TARGET':mode==='cricket'?'CRICKET':mode==='match'?'MATCH MEDLEY':'01 GAME'}</div><div className="aside-number">{mode==='practice'?(practiceTarget===25?'BULL':practiceTarget):mode==='robo'&&roboGameMode==='cricket'?'CR':initial}</div><div className="aside-rule">{mode==='cricket'?'15 · 16 · 17 · 18 · 19 · 20 · BULL':mode==='practice'?'狙った数字を何度でも練習':mode==='robo'?`YOU  VS  ROBO · ${difficulty} · ${roboGameMode==='cricket'?'CRICKET':'01'}`:mode==='match'?`BEST OF ${matchBestOf} · ${matchBestOf===3?'01 · CR · CH':'01 · CR · CR · 01 · CH'}`:`15 ROUNDS · ${outRule.toUpperCase()}`}</div><div className="aside-board"><Board onHit={()=>{}} disabled /></div></aside></div>
     </section>}
 
     {screen === 'game' && onlineStatus === 'matched' && !game && <section className="game-view online-waiting"><span className="kicker">RANDOM MATCH</span><h1>対戦相手と接続中</h1><p>ゲーム情報を同期しています…</p></section>}
@@ -542,7 +553,7 @@ export const Example = () => {
         <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN中継を利用できます' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
-      {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
+      {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
       {game.finished ? <><GameResults game={game}/><div className="finish-card"><button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div></> : <div className="play-layout">
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${mode === 'robo' && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
@@ -555,7 +566,7 @@ export const Example = () => {
             <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
           </>}
         </div>
-        <div className="board-wrap">{(mode === 'cricket' || mode === 'match' && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
+        <div className="board-wrap">{(mode === 'cricket' || (mode === 'match' || mode === 'robo') && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
       </div>}
     </section>}
     <footer className="app-footer"><span>DARTS ROOM</span><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'LOCAL PLAY · OFFLINE'}</span></footer>
