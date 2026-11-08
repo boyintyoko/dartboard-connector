@@ -64,12 +64,19 @@ function GameResults({ game }: { game: Game }) {
 
 const AWARD_DURATION = 2400
 function AwardMovie({ award, onSkip }: { award: Award; onSkip: () => void }) {
+  const marks = award.title.endsWith(' MARKS')
   return <div className={`award-movie award-${award.kind}${award.title === 'THREE IN THE BLACK' ? ' award-black' : ''}`} role="status" aria-label={`${award.player} · ${award.title}`}>
-    <div className="award-sweep" />
-    <div className="award-burst">{Array.from({length:12},(_,i)=><i key={i} style={{'--ray':`${i*30}deg`} as React.CSSProperties}/>)}</div>
-    <div className="award-content"><small>ROUND AWARD</small>
-      {award.title === 'WHITE HORSE' ? <div className="award-symbol">♞</div> : award.kind === 'marks' ? <div className="award-symbol">{award.title.split(' ')[0]}<span>MARKS</span></div> : <svg className="award-target" viewBox="0 0 180 140" aria-hidden="true"><circle cx="90" cy="70" r="56"/><circle cx="90" cy="70" r="37"/><circle cx="90" cy="70" r="17"/>{(['HAT TRICK','THREE IN THE BLACK','THREE IN A BED','TON80'].includes(award.title)?[64,90,116]:[90]).map((x,i)=><g key={x} style={{animationDelay:`${i*.12}s`}}><path d={`M ${x} 76 l 22 -38 10 5 -24 35 z`}/><circle cx={x} cy="76" r="4"/></g>)}</svg>}
-      <h2>{award.title}</h2><p className="award-call">{award.call}</p><p>{award.player}</p><div className="award-timer"/></div>
+    <div className="award-flare" aria-hidden="true"/>
+    <div className="award-content">
+      <div className="award-eyebrow"><span/>ROUND HIGHLIGHT<span/></div>
+      <div className={`award-headline${marks ? ' award-headline-marks' : ''}`}>
+        {marks && <strong className="award-number">{award.title.split(' ')[0]}</strong>}
+        <h2>{marks ? 'MARKS' : award.title}</h2>
+      </div>
+      <div className="award-line" aria-hidden="true"/>
+      <p className="award-player">{award.player}</p>
+      <div className="award-timer" aria-hidden="true"/>
+    </div>
     <button className="award-skip" onClick={onSkip}>スキップ →</button>
   </div>
 }
@@ -204,14 +211,7 @@ export const Example = () => {
         oscillator.onended = () => { oscillator.disconnect(); gain.disconnect() }
       })
     }
-    if (soundRef.current && award.call && 'speechSynthesis' in window) {
-      const call = new SpeechSynthesisUtterance(award.call)
-      call.lang = 'ja-JP'; call.rate = 1.1; call.volume = .8
-      const voice = window.speechSynthesis.getVoices().find(voice => voice.lang.startsWith('ja'))
-      if (voice) call.voice = voice
-      window.speechSynthesis.speak(call)
-    }
-    return () => { window.clearTimeout(timer); if ('speechSynthesis' in window) window.speechSynthesis.cancel() }
+    return () => window.clearTimeout(timer)
   }, [game?.award?.id])
   const autoChangedTurn = useRef<Game | null>(null)
   onlineSeatRef.current = onlineSeat
