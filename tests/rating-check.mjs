@@ -1,0 +1,38 @@
+import ts from 'typescript'
+import fs from 'node:fs'
+import assert from 'node:assert/strict'
+const load = async path => import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText).toString('base64')}`)
+const {createGame,throwDart,nextTurn,resolveMatchCoinToss} = await load('example/src/lib/game.ts')
+const {ratingLevel,summarizeRating} = await load('example/src/lib/rating.ts')
+const dart=(g,base,ratio=1)=>throwDart(g,{base,ratio})
+const turn=(g,hits)=>nextTurn(hits.reduce((g,[base,ratio=1])=>dart(g,base,ratio),g))
+let g=createGame('01',['A','B'],301,'fat','open')
+g=turn(g,[[20,3],[20,3],[20,3]]);g=turn(g,[[20],[20],[20]])
+g=turn(g,[[20,3],[0],[0]]);g=turn(g,[[20],[20],[20]])
+const before=g
+g=turn(g,[[1],[20],[20]])
+assert.equal(before.statsFrozen,null)
+assert.deepEqual(g.statsFrozen.map(p=>[p.points,p.rounds]),[[281,3],[120,2]])
+g=turn(g,[[20,3],[20,3],[20,3]])
+g=dart(g,20)
+assert.equal(g.ratingResults.length,1);assert.equal(g.ratingResults[0].eligible,true)
+assert.equal(g.ratingResults[0].stats[0],281/3);assert.equal(g.ratingResults[0].stats[1],60)
+g=createGame('cricket',['A','B'])
+g=turn(g,[[20,3],[19,3],[18,3]]);g=turn(g,[[0],[0],[0]])
+g=turn(g,[[17,3],[16,3],[15,3]])
+assert.deepEqual(g.statsFrozen.map(p=>[p.marks,p.rounds]),[[18,2],[0,1]])
+g=turn(g,[[20,3],[19,3],[18,3]])
+g=dart(g,25,2);g=dart(g,25)
+assert.equal(g.finished,true);assert.deepEqual(g.ratingResults[0].stats,[9,0])
+for (const [mode,names,bull] of [['robo',['A','ROBO · EASY'],'fat'],['01',['A'],'fat'],['01',['A','B'],'split']]) {
+  g=createGame(mode,names,2,bull,'open');g=dart(g,2)
+  assert.equal(g.ratingResults[0].eligible,false)
+}
+g=createGame('match',['A','B'],2,'fat','double');g=resolveMatchCoinToss(g,0)
+g=dart(g,1,2);assert.equal(g.match.legIndex,1);assert.equal(g.ratingResults.length,1);assert.deepEqual(g.statsTotals.map(p=>p.rounds),[0,0]);assert.equal(g.statsFrozen,null)
+assert.equal(ratingLevel('01',39.99),1);assert.equal(ratingLevel('01',40),2);assert.equal(ratingLevel('cricket',4.75),18)
+const records=Array.from({length:40},(_,i)=>({game_id:String(i),mode:i%2?'01':'cricket',stats:i%2?80:2.9,won:true}))
+assert.equal(summarizeRating(records).count,30);assert.equal(summarizeRating(records).rating,10)
+assert.equal(summarizeRating(records.slice(0,9)).rating,null)
+assert.equal(summarizeRating(records.filter(p=>p.mode==='01')).rating,null)
+console.log('PASS: 80% turn boundaries, opponent exclusion after cutoff, cricket MPR, eligibility, match leg archive/reset, immutable stats, rating thresholds and sample limits')

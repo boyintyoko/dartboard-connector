@@ -3,6 +3,7 @@
 import { DARTSLIVEHomeConnector } from '@minimalcorp/dartboard-connector/dartslive-home'
 import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AccountPanel } from '../components/account-panel'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
 import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
@@ -41,6 +42,7 @@ function GameResults({ game }: { game: Game }) {
       <div className="result-main-score"><small>{practice ? practiceHitOnly ? 'TARGET HITS' : 'FINAL SCORE' : cricket ? game.players.length === 1 ? 'TARGETS CLOSED' : 'CRICKET SCORE' : match ? 'FINAL LEG · REMAINING' : 'REMAINING SCORE'}</small><b>{practice ? practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score : cricket && game.players.length === 1 ? `${closedTargets(player)} / ${targets.length}` : player.score}</b></div>
       <div className="result-stats">
         <div><small>{match ? 'DARTS · FINAL LEG' : 'DARTS THROWN'}</small><strong>{player.darts}</strong></div>
+        {!practice && game.ratingResults.at(-1) && <div><small>{cricket ? '80% MPR' : '80% PPR'}</small><strong>{game.ratingResults.at(-1)!.stats[index]?.toFixed(2) ?? '—'}</strong></div>}
         {cricket ? <>
           <div><small>TARGETS CLOSED</small><strong>{closedTargets(player)} / {targets.length}</strong></div>
           <div><small>TOTAL MARKS</small><strong>{targets.reduce((sum, target) => sum + (player.marks[target] || 0), 0)}</strong></div>
@@ -309,7 +311,7 @@ export const Example = () => {
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
     if (resolved === previous) return
-    gameRef.current = resolved; setHistory(items => [...items, previous]); setGame(resolved)
+    gameRef.current = resolved; setHistory(items => resolved.ratingResults.length > previous.ratingResults.length ? [] : [...items, previous]); setGame(resolved)
     if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
     if (hit) playSound(hit)
   }, [onlineStatus, playSound, onlineSeat])
@@ -550,6 +552,7 @@ export const Example = () => {
       <button className="wordmark" onClick={goHome}><span className="mark">D</span><span>DARTS<small>ROOM</small></span></button>
       <div className="board-status"><span className={`status-dot ${connected ? 'online' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected ? disconnect : connect}>{connecting ? '接続中…' : connected ? '切断' : 'Bluetooth接続'}</button></div>
     </header>
+    <AccountPanel game={game} seat={onlineSeat} />
     {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>閉じる</button></div>}
 
     {screen === 'home' && <>

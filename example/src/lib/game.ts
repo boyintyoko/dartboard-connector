@@ -20,7 +20,14 @@ export type MatchState = {
   choiceOwner: number | null
   choiceAs: 'first' | 'game' | null
 }
+export type RoundStats = { points: number; marks: number; rounds: number }
+export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; winner: number | null; eligible: boolean }
 export type Game = {
+  id: string
+  initial: number
+  statsTotals: RoundStats[]
+  statsFrozen: RoundStats[] | null
+  ratingResults: RatingResult[]
   mode: Mode
   legMode: '01' | 'cricket' | null
   match: MatchState | null
@@ -73,6 +80,39 @@ export function roboAim(game: Game): Hit {
   return { base: remaining % 2 ? 1 : Math.min(20, Math.max(1, remaining - 2)), ratio: 1 }
 }
 
+const emptyStats = (count: number): RoundStats[] => Array.from({ length: count }, () => ({ points: 0, marks: 0, rounds: 0 }))
+const copyStats = (stats: RoundStats[]) => stats.map(value => ({ ...value }))
+function freezeStats(game: Game): Game {
+  if (game.statsFrozen || game.mode === 'practice') return game
+  const reached = isX01Game(game)
+    ? game.players.some(p => p.score <= Math.floor(game.initial * .2))
+    : game.players.some(p => targets.filter(t => (p.marks[t] || 0) >= 3).length >= 6)
+  return reached ? { ...game, statsFrozen: copyStats(game.statsTotals) } : game
+}
+function recordResult(game: Game, winner: number | null): Game {
+  if (game.mode === 'practice') return game
+  const id = `${game.id}:${game.match?.legIndex ?? 0}`
+  if (game.ratingResults.some(result => result.id === id)) return game
+  const mode = isX01Game(game) ? '01' : 'cricket'
+  const stats = (game.statsFrozen ?? game.statsTotals).map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
+  const eligible = game.players.length >= 2 && game.mode !== 'robo' && !game.players.some(p => p.name.startsWith('ROBO ·')) && (mode !== '01' || game.bull === 'fat') && game.statsTotals.every(p => p.rounds > 0)
+  return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, winner, eligible }] }
+}
+function trackStats(before: Game, after: Game, hit: Hit): Game {
+  if (after.mode === 'practice' || before.statsFrozen) return after
+  const totals = copyStats(before.statsTotals)
+  const own = totals[before.active]
+  if (!before.throws.length) own.rounds++
+  own.points += after.players[before.active].points - before.players[before.active].points
+  if (!isX01Game(after) && targets.includes(hit.base)) {
+    const marks = before.players[before.active].marks[hit.base] || 0
+    const opponentsOpen = before.players.some((p, i) => i !== before.active && (p.marks[hit.base] || 0) < 3)
+    if (marks < 3 || opponentsOpen) own.marks += opponentsOpen ? hit.ratio : Math.min(hit.ratio, 3 - marks)
+  }
+  const next = { ...after, statsTotals: totals }
+  return after.throws.length === 3 || after.bust || after.finished ? freezeStats(next) : next
+}
+
 function newPlayers(names: string[], initial: number, gameMode: '01' | 'cricket'): Player[] {
   return names.map((name, i) => ({ name: name.trim() || `PLAYER ${i + 1}`, score: gameMode === '01' ? initial : 0, marks: {}, darts: 0, points: 0 }))
 }
@@ -81,7 +121,7 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   match.stage = 'playing'; match.legStarter = starter; match.corkThrows = []; match.choiceOwner = null; match.choiceAs = null
   const players = newPlayers(game.players.map(p => p.name), initial, legMode)
   const leg = match.legModes[match.legIndex]
-  return { ...game, match, legMode, players, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
+  return { ...game, match, legMode, players, initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
 export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01', practiceMode: PracticeMode = 'target'): Game {
   const match: MatchState | null = mode === 'match' ? {
@@ -94,6 +134,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   const practiceStart = practiceMode === 'half-it' ? 40 : 0
   const players = newPlayers(names, mode === 'practice' ? practiceStart : initial, gameMode)
   const game: Game = {
+    id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [],
     mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
     players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
@@ -103,6 +144,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
 }
 
 function prepareNextLeg(game: Game, winner: number): Game {
+  game = recordResult(game, winner)
   const match = { ...game.match!, legWins: [...game.match!.legWins] as [number, number], legModes: [...game.match!.legModes] }
   match.legWins[winner]++
   const required = Math.floor(match.bestOf / 2) + 1
@@ -175,7 +217,7 @@ export function chooseMatchGame(game: Game, legMode: '01' | 'cricket', initial: 
 
 export function throwDart(game: Game, hit: Hit): Game {
   if (game.finished || game.throws.length >= 3 || game.bust || game.mode === 'match' && game.match?.stage !== 'playing') return game
-  const g: Game = { ...game, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
+  let g: Game = { ...game, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
   const p = g.players[g.active]
   p.darts++
   const value = points(hit, g.bull)
@@ -230,6 +272,8 @@ export function throwDart(game: Game, hit: Hit): Game {
     if (g.players.some((other, i) => i !== g.active && (other.marks[hit.base] || 0) < 3)) p.score += extra * hit.base
     if (targets.every(t => p.marks[t] === 3) && g.players.every(other => p.score >= other.score)) { g.finished = true; g.winner = g.active }
   }
+  g = trackStats(game, g, hit)
+  if (g.finished && g.mode !== 'match') g = recordResult(g, g.winner)
   if (g.finished && g.mode === 'match' && g.winner !== null) return prepareNextLeg(g, g.winner)
   if (g.finished) g.message = `${p.name} WINS!`
   else if (!g.bust && g.mode !== 'practice') g.message = g.throws.length === 3 ? 'REMOVE DARTS · CHANGE' : label(hit)
@@ -238,6 +282,11 @@ export function throwDart(game: Game, hit: Hit): Game {
 
 export function nextTurn(game: Game): Game {
   if (game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return game
+  if (game.mode !== 'practice' && !game.throws.length && !game.statsFrozen) {
+    const totals = copyStats(game.statsTotals); totals[game.active].rounds++
+    game = { ...game, statsTotals: totals }
+  }
+  game = freezeStats(game)
   if (game.mode === 'practice' && game.practiceMode !== 'target') {
     while (game.throws.length < 3 && !game.finished) game = throwDart(game, { base: 0, ratio: 1 })
   }
@@ -251,7 +300,7 @@ export function nextTurn(game: Game): Game {
     const best = isX01Game(game) ? Math.min(...scores) : Math.max(...scores)
     const winners = scores.map((score, i) => score === best ? i : -1).filter(i => i >= 0)
     if (game.mode === 'match' && winners.length === 1) return prepareNextLeg(game, winners[0])
-    return { ...game, finished: true, winner: winners.length === 1 ? winners[0] : null, message: winners.length === 1 ? `${game.players[winners[0]].name} WINS!` : 'DRAW GAME' }
+    return { ...recordResult(game, winners.length === 1 ? winners[0] : null), finished: true, winner: winners.length === 1 ? winners[0] : null, message: winners.length === 1 ? `${game.players[winners[0]].name} WINS!` : 'DRAW GAME' }
   }
   return { ...game, active, round, throws: [], bust: false, turnStart: game.players[active].score, practiceRoundHits: 0, message: 'THROW YOUR DARTS' }
 }
