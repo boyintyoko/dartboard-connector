@@ -64,7 +64,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   const players = newPlayers(names, initial, mode === 'cricket' ? 'cricket' : '01')
   const game: Game = {
     mode, legMode: mode === 'match' ? '01' : null, match, bull, outRule, practiceTarget, practiceHits: 0,
-    players, active: 0, round: 1, limit: mode === 'cricket' ? 20 : isX01(mode) ? 15 : 0,
+    players, active: 0, round: 1, limit: mode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
     message: mode === 'match' ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
   }
