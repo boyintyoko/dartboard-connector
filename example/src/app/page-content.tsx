@@ -129,7 +129,7 @@ export const Example = () => {
     setError('')
     setOnlineStatus('connecting')
     const configuredUrl = process.env.NEXT_PUBLIC_MATCH_SERVER_URL
-    const url = configuredUrl || (process.env.NODE_ENV === 'production' ? window.location.origin : `http://${window.location.hostname}:4001`)
+    const url = configuredUrl || (process.env.NODE_ENV === 'production' ? 'https://darts-room-match.onrender.com' : `http://${window.location.hostname}:4001`)
     const socket = io(url, { transports: ['websocket', 'polling'], timeout: 10000 })
     onlineSocket.current?.disconnect()
     onlineSocket.current = socket
