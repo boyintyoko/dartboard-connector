@@ -4,7 +4,7 @@ import { DARTSLIVEHomeConnector } from '@minimalcorp/dartboard-connector/dartsli
 import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { chooseMatchFirst, chooseMatchGame, createGame, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, resolveCork, resolveMatchCoinToss, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
+import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -16,6 +16,16 @@ const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: 
 const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 const isRoboGame = (game: Game) => game.players[1]?.name.startsWith('ROBO ·') === true
+const practiceBoardTarget = (game: Game): number | 'bull' | 'double' | 'triple' | undefined => {
+  if (game.practiceMode === 'target') return game.practiceTarget
+  if (game.practiceMode === 'eagles-eye') return 'bull'
+  if (game.practiceMode === 'cricket-count-up') return practiceTargets[Math.min(game.round - 1, practiceTargets.length - 1)]
+  if (game.practiceMode === 'half-it') {
+    const target = halfItTargets[game.round - 1]
+    return target === 'BULL' ? 'bull' : target === 'D' ? 'double' : target === 'T' ? 'triple' : target && /^\d+$/.test(target) ? Number(target) : undefined
+  }
+  return undefined
+}
 
 function GameResults({ game }: { game: Game }) {
   const cricket = game.mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
@@ -50,7 +60,7 @@ function GameResults({ game }: { game: Game }) {
   </section>
 }
 
-function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[] }) {
+function Board({ onHit, disabled, darts = [], activeTarget }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[]; activeTarget?: number | 'bull' | 'double' | 'triple' }) {
   const xy = (r: number, a: number) => `${200 + r * Math.sin(a)},${200 - r * Math.cos(a)}`
   const dartPosition = (hit: Hit, dartIndex: number) => {
     if (hit.base === 25) {
@@ -79,12 +89,13 @@ function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; dis
       return <g key={n}>
         {[[16, 92, 1], [92, 104, 3], [104, 150, 1], [150, 164, 2]].map(([inner, outer, ratio], j) => {
           const hit = { base: n, ratio }
-          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}`} onClick={() => !disabled && onHit(hit)} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke="#0b111a" strokeWidth="1.5" />
+          const isActive = activeTarget === n || activeTarget === 'double' && ratio === 2 || activeTarget === 'triple' && ratio === 3
+          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}`} onClick={() => !disabled && onHit(hit)} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke={isActive ? '#c4f36a' : '#0b111a'} strokeWidth={isActive ? 2.6 : 1.5} />
         })}
         <text x={200 + 181 * Math.sin(i * Math.PI / 10)} y={205 - 181 * Math.cos(i * Math.PI / 10)} textAnchor="middle" fill="#e3e9ed" fontSize="15">{n}</text>
       </g>
     })}
-    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} role="button" tabIndex={disabled ? -1 : 0} aria-label={b.ratio === 1 ? 'S-BULL' : 'D-BULL'} onClick={() => !disabled && onHit({ base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} />)}
+    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} stroke={activeTarget === 'bull' ? '#c4f36a' : 'none'} strokeWidth={activeTarget === 'bull' ? 3 : 0} role="button" tabIndex={disabled ? -1 : 0} aria-label={b.ratio === 1 ? 'S-BULL' : 'D-BULL'} onClick={() => !disabled && onHit({ base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} />)}
     {darts.map((hit, index) => {
       const point = dartPosition(hit, index)
       const angle = (index * 37 - 132) * Math.PI / 180
@@ -590,7 +601,7 @@ export const Example = () => {
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${(mode === 'robo' || isRoboGame(game)) && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits}` : activePlayer?.score : activePlayer?.score}</div>
-          {mode === 'practice' && <p className="practice-focus">{game.practiceMode === 'half-it' ? 'THIS ROUND' : game.practiceMode === 'shoot-out' ? 'NEXT TARGET' : 'TARGET'} <strong>{practiceTargetForRound(game)}</strong></p>}
+          {mode === 'practice' && <p className="practice-focus">{game.practiceMode === 'half-it' ? 'THIS ROUND' : game.practiceMode === 'shoot-out' ? 'MULTIPLIER' : 'TARGET'} <strong>{practiceTargetForRound(game)}</strong>{game.practiceMode === 'shoot-out' && <small className="practice-progress"> · {game.practiceOpened.filter(n => n !== 25).length}/20 NUMBERS</small>}</p>}
             {mode === 'match' && game.match!.stage === 'choice' ? <div className="match-decision">{isRoboGame(game) && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : game.match!.choiceAs === null ? <><p>{onlineStatus === 'matched' ? 'コイントスの勝者' : 'コークの勝者'}が選びます。先攻を取るか、ゲーム選択権を取ってください。</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('first', 'first')}>先攻を取る</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('choose', 'game')}>ゲームを選ぶ</button></> : <><p>{game.players[game.active].name} がCHのゲームを選択</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', '01')}>01を選ぶ</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', 'cricket')}>CRICKETを選ぶ</button></>}</div> : mode === 'match' && game.match!.stage === 'cork-tie' ? <div className="match-decision"><p>同じエリアに入っています。実際に中心に近い方を選んでください。</p>{game.players.map((p, i) => <button key={i} disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('cork-winner', i)}>{p.name} のダーツが近い</button>)}</div> : <>
             <div className="throw-message" aria-live="polite">{game.message}</div>
             <div className="dart-slots">{(mode === 'match' && game.match!.stage === 'cork' ? [0, 1] : [0, 1, 2]).map(i => <div key={i}><small>{mode === 'match' && game.match!.stage === 'cork' ? `CORK · ${game.players[i].name}` : `DART ${i + 1}`}</small><b>{mode === 'match' && game.match!.stage === 'cork' ? game.match!.corkThrows[i] ? label(game.match!.corkThrows[i]) : '—' : game.throws[i] ? label(game.throws[i]) : '—'}</b></div>)}</div>
@@ -598,7 +609,7 @@ export const Example = () => {
             <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
           </>}
         </div>
-        <div className="board-wrap">{(mode === 'cricket' || (mode === 'match' || mode === 'robo') && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || (mode === 'robo' || isRoboGame(game)) && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
+        <div className="board-wrap">{(mode === 'cricket' || (mode === 'match' || mode === 'robo') && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || (mode === 'robo' || isRoboGame(game)) && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} activeTarget={mode === 'practice' ? practiceBoardTarget(game) : undefined} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
       </div>}
     </section>}
     <footer className="app-footer"><span>DARTS ROOM</span><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'LOCAL PLAY · OFFLINE'}</span></footer>

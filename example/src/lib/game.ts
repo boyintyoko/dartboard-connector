@@ -48,7 +48,7 @@ export const halfItTargets = ['15', '16', 'D', '17', '18', 'T', '19', '20', 'BUL
 export const practiceTargetForRound = (game: Game) => {
   if (game.practiceMode === 'cricket-count-up') return practiceTargets[Math.min(game.round - 1, practiceTargets.length - 1)]
   if (game.practiceMode === 'half-it') return halfItTargets[game.round - 1] || 'FINISH'
-  if (game.practiceMode === 'shoot-out') return game.practiceOpened.length < 20 ? 'OPEN A NEW NUMBER' : 'BULL BONUS'
+  if (game.practiceMode === 'shoot-out') return game.practiceOpened.filter(n => n !== 25).length < 20 ? `×${game.practiceOpened.length + 1}` : 'BULL BONUS'
   if (game.practiceMode === 'eagles-eye') return 'BULL'
   return game.practiceTarget === 25 ? 'BULL' : String(game.practiceTarget)
 }
@@ -78,8 +78,8 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
     legIndex: 0, legWins: [0, 0], leadRule, stage: 'cork', corkPurpose: 'opening', corkThrows: [], legStarter: 0, choiceOwner: null, choiceAs: null,
   } : null
   const gameMode = mode === 'cricket' || mode === 'robo' && roboMode === 'cricket' ? 'cricket' : '01'
-  const players = newPlayers(names, initial, gameMode)
-  if (mode === 'practice' && practiceMode === 'half-it' && players[0]) players[0].score = 40
+  const practiceStart = practiceMode === 'half-it' ? 40 : 0
+  const players = newPlayers(names, mode === 'practice' ? practiceStart : initial, gameMode)
   const game: Game = {
     mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
     players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
