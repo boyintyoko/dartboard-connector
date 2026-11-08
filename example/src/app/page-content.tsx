@@ -14,6 +14,7 @@ const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: 
   { id: 'robo', title: 'ROBO MATCH', subtitle: 'CPUと対戦', icon: '♙', accent: 'purple' },
 ]
 const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
+type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 
 function Board({ onHit, disabled }: { onHit: (hit: Hit) => void; disabled: boolean }) {
   const xy = (r: number, a: number) => `${200 + r * Math.sin(a)},${200 - r * Math.cos(a)}`
@@ -43,6 +44,11 @@ export const Example = () => {
   const audio = useRef<AudioContext | null>(null)
   const onlineSocket = useRef<Socket | null>(null)
   const onlineSeatRef = useRef<number | null>(null)
+  const peerConnection = useRef<RTCPeerConnection | null>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const pendingCandidates = useRef<RTCIceCandidateInit[]>([])
+  const localVideo = useRef<HTMLVideoElement | null>(null)
+  const remoteVideo = useRef<HTMLVideoElement | null>(null)
   const [screen, setScreen] = useState<'home' | 'setup' | 'game'>('home')
   const [mode, setMode] = useState<Mode>('01')
   const [connected, setConnected] = useState(false)
@@ -66,12 +72,77 @@ export const Example = () => {
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
   const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [remoteVideoActive, setRemoteVideoActive] = useState(false)
+  const [cameraError, setCameraError] = useState('')
   const autoChangedTurn = useRef<Game | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
   const soundRef = useRef(sound); soundRef.current = sound
   const modeInfo = modes.find(item => item.id === mode)!
   const activePlayer = game?.players[game.active]
+
+  const ensurePeerConnection = () => {
+    if (peerConnection.current) return peerConnection.current
+    if (typeof RTCPeerConnection === 'undefined') throw new Error('このブラウザーはWebRTCに対応していません。')
+    const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] })
+    peer.addTransceiver('video', { direction: 'sendrecv' })
+    peer.onicecandidate = event => {
+      if (event.candidate) onlineSocket.current?.emit('match:signal', { type: 'candidate', candidate: event.candidate.toJSON() })
+    }
+    peer.ontrack = event => {
+      const stream = event.streams[0] || new MediaStream([event.track])
+      setRemoteStream(stream)
+      setRemoteVideoActive(!event.track.muted)
+      event.track.onunmute = () => setRemoteVideoActive(true)
+      event.track.onmute = () => setRemoteVideoActive(false)
+    }
+    peerConnection.current = peer
+    return peer
+  }
+  const makeVideoOffer = async () => {
+    const peer = ensurePeerConnection()
+    if (peer.signalingState !== 'stable') return
+    const offer = await peer.createOffer()
+    await peer.setLocalDescription(offer)
+    onlineSocket.current?.emit('match:signal', { type: 'offer', description: peer.localDescription?.toJSON() || offer })
+  }
+  const closeVideo = () => {
+    localStreamRef.current?.getTracks().forEach(track => track.stop())
+    localStreamRef.current = null
+    peerConnection.current?.close()
+    peerConnection.current = null
+    pendingCandidates.current = []
+    setLocalStream(null)
+    setRemoteStream(null)
+    setRemoteVideoActive(false)
+    setCameraError('')
+  }
+  const toggleCamera = async () => {
+    setCameraError('')
+    if (localStreamRef.current) {
+      const peer = peerConnection.current
+      const sender = peer?.getSenders().find(item => item.track?.kind === 'video')
+      try { await sender?.replaceTrack(null) } catch { /* The peer may already have closed. */ }
+      localStreamRef.current.getTracks().forEach(track => track.stop())
+      localStreamRef.current = null
+      setLocalStream(null)
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' }, audio: false })
+      const track = stream.getVideoTracks()[0]
+      const peer = ensurePeerConnection()
+      const transceiver = peer.getTransceivers().find(item => item.receiver.track.kind === 'video')
+      if (transceiver) await transceiver.sender.replaceTrack(track)
+      else peer.addTrack(track, stream)
+      localStreamRef.current = stream
+      setLocalStream(stream)
+    } catch (cause) {
+      setCameraError(cause instanceof Error ? `カメラを開始できませんでした: ${cause.message}` : 'カメラを開始できませんでした。ブラウザーのカメラ許可をご確認ください。')
+    }
+  }
 
   const playSound = useCallback((hit: Hit) => {
     if (!soundRef.current || !audio.current || audio.current.state !== 'running') return
@@ -182,6 +253,12 @@ export const Example = () => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
       setOnlineStatus('matched')
       setOnlineSelectionOpen(false)
+      try {
+        ensurePeerConnection()
+        if (match.seat === 0) void makeVideoOffer().catch(cause => setCameraError(cause instanceof Error ? cause.message : '映像接続を開始できませんでした。'))
+      } catch (cause) {
+        setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。')
+      }
       setMode(match.mode)
       setCount(2)
       setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
@@ -198,6 +275,28 @@ export const Example = () => {
       } else {
         gameRef.current = null
         setGame(null)
+      }
+    })
+    socket.on('match:signal', async (signal: MatchSignal) => {
+      try {
+        const peer = ensurePeerConnection()
+        if (signal.type === 'offer') {
+          if (onlineSeatRef.current !== 1) return
+          await peer.setRemoteDescription(new RTCSessionDescription(signal.description))
+          for (const candidate of pendingCandidates.current.splice(0)) await peer.addIceCandidate(new RTCIceCandidate(candidate))
+          const answer = await peer.createAnswer()
+          await peer.setLocalDescription(answer)
+          socket.emit('match:signal', { type: 'answer', description: peer.localDescription?.toJSON() || answer })
+        } else if (signal.type === 'answer') {
+          if (onlineSeatRef.current !== 0) return
+          await peer.setRemoteDescription(new RTCSessionDescription(signal.description))
+          for (const candidate of pendingCandidates.current.splice(0)) await peer.addIceCandidate(new RTCIceCandidate(candidate))
+        } else if (signal.type === 'candidate') {
+          if (peer.remoteDescription) await peer.addIceCandidate(new RTCIceCandidate(signal.candidate))
+          else pendingCandidates.current.push(signal.candidate)
+        }
+      } catch (cause) {
+        setCameraError(cause instanceof Error ? `映像接続でエラーが発生しました: ${cause.message}` : '映像接続に失敗しました。')
       }
     })
     socket.on('match:state', (next: Game) => {
@@ -221,6 +320,7 @@ export const Example = () => {
     })
     socket.on('match:opponent-left', () => {
       setError('対戦相手が退出しました。')
+      closeVideo()
       setOnlineStatus('offline')
       setOnlineSeat(null)
       onlineSeatRef.current = null
@@ -235,8 +335,18 @@ export const Example = () => {
   useEffect(() => {
     connector.current = new DARTSLIVEHomeConnector()
     const timer = window.setInterval(() => { if (connector.current && !connector.current.isConnected) setConnected(false) }, 1000)
-    return () => { window.clearInterval(timer); unsubscribe.current?.(); connector.current?.disconnect(); onlineSocket.current?.disconnect(); void audio.current?.close() }
+    return () => { window.clearInterval(timer); unsubscribe.current?.(); connector.current?.disconnect(); localStreamRef.current?.getTracks().forEach(track => track.stop()); peerConnection.current?.close(); onlineSocket.current?.disconnect(); void audio.current?.close() }
   }, [])
+  useEffect(() => {
+    if (!localVideo.current) return
+    localVideo.current.srcObject = localStream
+    if (localStream) void localVideo.current.play().catch(() => {})
+  }, [localStream])
+  useEffect(() => {
+    if (!remoteVideo.current) return
+    remoteVideo.current.srcObject = remoteStream
+    if (remoteStream) void remoteVideo.current.play().catch(() => {})
+  }, [remoteStream, remoteVideoActive])
   useEffect(() => {
     if (!game || game.mode !== 'robo' || game.active !== 1 || game.finished) return
     const timer = window.setTimeout(() => {
@@ -293,7 +403,7 @@ export const Example = () => {
     const next = createGame(mode, players, initial, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
     gameRef.current = next; setGame(next); setHistory([]); setScreen('game')
   }
-  const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
+  const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
   const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
 
   return <main className="app-shell">
@@ -339,6 +449,14 @@ export const Example = () => {
     {screen === 'game' && onlineStatus === 'matched' && !game && <section className="game-view online-waiting"><span className="kicker">RANDOM MATCH</span><h1>対戦相手と接続中</h1><p>ゲーム情報を同期しています…</p></section>}
     {screen === 'game' && game && <section className="game-view">
       <div className="game-toolbar"><button className="back-link" onClick={goHome}>← ホーム</button><div className="game-label"><span className={`mini-dot ${modeInfo.accent}`} />{modeInfo.title}{onlineStatus === 'matched' ? ' · ONLINE' : mode === 'robo' ? ' · CPU対戦' : ''}</div><div className="game-round">{mode === 'practice' ? 'FREE PRACTICE' : mode === 'match' ? `LEG ${game.match!.legIndex + 1} / ${game.match!.bestOf} · ${game.match!.legWins[0]} - ${game.match!.legWins[1]}` : `ROUND ${game.round}${game.limit ? ` / ${game.limit}` : ''}`}</div></div>
+      {onlineStatus === 'matched' && <div className="match-video-panel">
+        <div className="match-video-feeds">
+          <div className="match-video-feed"><div className="match-video-frame">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>あなたのカメラはオフです</span>}<small>YOU</small></div></div>
+          <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
+        </div>
+        <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small></div>
+        {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
+      </div>}
       <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{mode === 'robo' && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? `${game.practiceHits} / ${p.darts}` : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || game.mode === 'match' && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>
       {game.finished ? <div className="finish-card"><div className="kicker">GAME COMPLETE</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2><button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div> : <div className="play-layout">
         <div className="turn-panel">

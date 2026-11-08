@@ -70,6 +70,17 @@ export function attachMatchmaking(io) {
         io.to(match.host).emit('match:action', { ...action, seat: socket.data.seat })
       }
     })
+    socket.on('match:signal', signal => {
+      const room = socket.data.matchRoom
+      const match = room && matches.get(room)
+      if (!match || !match.ids.includes(socket.id) || !signal || typeof signal !== 'object') return
+      if (signal.type === 'offer' || signal.type === 'answer') {
+        if (!signal.description || signal.description.type !== signal.type || typeof signal.description.sdp !== 'string' || signal.description.sdp.length > 100_000) return
+      } else if (signal.type === 'candidate') {
+        if (!signal.candidate || typeof signal.candidate.candidate !== 'string' || signal.candidate.candidate.length > 4_096) return
+      } else return
+      socket.to(room).emit('match:signal', signal)
+    })
     socket.on('disconnect', () => {
       removeFromQueue(socket.id)
       const room = socket.data.matchRoom

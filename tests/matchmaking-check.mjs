@@ -60,7 +60,10 @@ try {
   assert.equal(randomMatch.mode, 'cricket', 'RANDOM should accept the opponent’s fixed mode')
   assert.equal(cricketMatch.mode, 'cricket')
   assert.equal(randomMatch.room, cricketMatch.room)
-  console.log('Matchmaking mode preferences passed')
+  const relayedCandidate = new Promise(resolve => cricketAgain.once('match:signal', resolve))
+  random.emit('match:signal', { type: 'candidate', candidate: { candidate: 'candidate:relay-test', sdpMid: '0', sdpMLineIndex: 0 } })
+  assert.deepEqual(await relayedCandidate, { type: 'candidate', candidate: { candidate: 'candidate:relay-test', sdpMid: '0', sdpMLineIndex: 0 } })
+  console.log('Matchmaking modes and WebRTC signaling passed')
 } finally {
   for (const socket of clients) socket.disconnect()
   await new Promise(resolve => server.close(resolve))
