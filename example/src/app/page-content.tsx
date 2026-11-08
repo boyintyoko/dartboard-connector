@@ -16,8 +16,24 @@ const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: 
 const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 
-function Board({ onHit, disabled }: { onHit: (hit: Hit) => void; disabled: boolean }) {
+function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[] }) {
   const xy = (r: number, a: number) => `${200 + r * Math.sin(a)},${200 - r * Math.cos(a)}`
+  const dartPosition = (hit: Hit, dartIndex: number) => {
+    if (hit.base === 25) {
+      const angle = (dartIndex * 137.5 - 35) * Math.PI / 180
+      return { x: 200 + (hit.ratio === 2 ? 4 : 12) * Math.cos(angle), y: 200 + (hit.ratio === 2 ? 4 : 12) * Math.sin(angle) }
+    }
+    const segment = numbers.indexOf(hit.base)
+    if (segment < 0) {
+      const angle = (dartIndex * 137.5 + 20) * Math.PI / 180
+      return { x: 200 + 177 * Math.cos(angle), y: 200 + 177 * Math.sin(angle) }
+    }
+    const angle = (segment * 18 + (dartIndex % 3 - 1) * 3.2) * Math.PI / 180
+    const radii: Record<number, [number, number]> = { 1: [38, 79], 2: [153, 160], 3: [94, 102] }
+    const [inner, outer] = radii[hit.ratio] || [112, 144]
+    const radius = inner + (outer - inner) * (0.3 + (dartIndex % 2) * 0.35)
+    return { x: 200 + radius * Math.sin(angle), y: 200 - radius * Math.cos(angle) }
+  }
   const handleKey = (e: React.KeyboardEvent<SVGElement>, hit: Hit) => {
     if (disabled || !['Enter', ' '].includes(e.key)) return
     e.preventDefault(); onHit(hit)
@@ -35,6 +51,19 @@ function Board({ onHit, disabled }: { onHit: (hit: Hit) => void; disabled: boole
       </g>
     })}
     {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} role="button" tabIndex={disabled ? -1 : 0} aria-label={b.ratio === 1 ? 'S-BULL' : 'D-BULL'} onClick={() => !disabled && onHit({ base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} />)}
+    {darts.map((hit, index) => {
+      const point = dartPosition(hit, index)
+      const angle = (index * 37 - 132) * Math.PI / 180
+      const tailX = point.x + 15 * Math.cos(angle)
+      const tailY = point.y + 15 * Math.sin(angle)
+      return <g key={`${index}-${hit.base}-${hit.ratio}`} className="board-dart" aria-label={`${label(hit)} のダーツ`}>
+        <line x1={point.x + 3 * Math.cos(angle)} y1={point.y + 3 * Math.sin(angle)} x2={tailX} y2={tailY} stroke="#05080d" strokeWidth="5" strokeLinecap="round" opacity=".8" />
+        <line x1={point.x + 2 * Math.cos(angle)} y1={point.y + 2 * Math.sin(angle)} x2={tailX} y2={tailY} stroke={index % 2 ? '#f4c873' : '#dbe7f1'} strokeWidth="2.2" strokeLinecap="round" />
+        <path d={`M ${tailX} ${tailY} l ${-5 * Math.sin(angle)} ${5 * Math.cos(angle)} l ${-7 * Math.cos(angle)} ${-7 * Math.sin(angle)} l ${5 * Math.sin(angle)} ${-5 * Math.cos(angle)} Z`} fill={index % 2 ? '#ec6672' : '#30b8a1'} stroke="#111823" strokeWidth="1" />
+        <circle cx={point.x} cy={point.y} r="3.2" fill="#f7f5eb" stroke="#0a0e14" strokeWidth="1.5" />
+        <title>{label(hit)}</title>
+      </g>
+    })}
   </svg>
 }
 
@@ -499,7 +528,7 @@ export const Example = () => {
             <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
           </>}
         </div>
-        <div className="board-wrap">{(mode === 'cricket' || mode === 'match' && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')}/></div>
+        <div className="board-wrap">{(mode === 'cricket' || mode === 'match' && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || mode === 'robo' && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
       </div>}
     </section>}
     <footer className="app-footer"><span>DARTS ROOM</span><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'LOCAL PLAY · OFFLINE'}</span></footer>
