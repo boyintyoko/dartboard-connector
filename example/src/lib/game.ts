@@ -1,6 +1,6 @@
 export type Mode = '01' | 'cricket' | 'practice' | 'match' | 'robo'
 export type Hit = { base: number; ratio: number }
-export type OutRule = 'master' | 'double'
+export type OutRule = 'master' | 'double' | 'single'
 export type MatchLegMode = '01' | 'cricket' | 'choice'
 export type MatchLeadRule = 'loser' | 'alternate'
 export type MatchStage = 'cork' | 'cork-tie' | 'choice' | 'playing' | 'finished'
@@ -153,9 +153,11 @@ export function throwDart(game: Game, hit: Hit): Game {
     else {
       p.score -= value; p.points += value
       if (p.score === 0) {
-        const checkoutAllowed = g.outRule === 'master' ? hit.ratio >= 2 : hit.ratio === 2
+        const checkoutAllowed = g.outRule === 'single'
+          ? hit.base !== 0
+          : g.outRule === 'master' ? hit.ratio >= 2 : hit.ratio === 2
         if (checkoutAllowed) { g.finished = true; g.winner = g.active }
-        else { p.score = g.turnStart; g.bust = true; g.message = 'BUST · DOUBLE OUT' }
+        else { p.score = g.turnStart; g.bust = true; g.message = `BUST · ${g.outRule.toUpperCase()} OUT` }
       }
     }
   } else if (g.mode === 'practice') {
