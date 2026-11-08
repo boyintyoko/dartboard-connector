@@ -28,8 +28,8 @@ function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; dis
       const angle = (dartIndex * 137.5 + 20) * Math.PI / 180
       return { x: 200 + 177 * Math.cos(angle), y: 200 + 177 * Math.sin(angle) }
     }
-    const angle = (segment * 18 + (dartIndex % 3 - 1) * 3.2) * Math.PI / 180
-    const radii: Record<number, [number, number]> = { 1: [38, 79], 2: [153, 160], 3: [94, 102] }
+    const angle = (segment * 18 + (dartIndex % 3 - 1) * 4.8) * Math.PI / 180
+    const radii: Record<number, [number, number]> = { 1: [38, 79], 2: [153, 160], 3: [96, 101] }
     const [inner, outer] = radii[hit.ratio] || [112, 144]
     const radius = inner + (outer - inner) * (0.3 + (dartIndex % 2) * 0.35)
     return { x: 200 + radius * Math.sin(angle), y: 200 - radius * Math.cos(angle) }
@@ -54,13 +54,22 @@ function Board({ onHit, disabled, darts = [] }: { onHit: (hit: Hit) => void; dis
     {darts.map((hit, index) => {
       const point = dartPosition(hit, index)
       const angle = (index * 37 - 132) * Math.PI / 180
-      const tailX = point.x + 15 * Math.cos(angle)
-      const tailY = point.y + 15 * Math.sin(angle)
+      const vx = Math.cos(angle), vy = Math.sin(angle), px = -vy, py = vx
+      const pointAt = (distance: number, side = 0) => ({ x: point.x + vx * distance + px * side, y: point.y + vy * distance + py * side })
+      const at = (distance: number, side = 0) => { const p = pointAt(distance, side); return `${p.x},${p.y}` }
+      const barrelStart = pointAt(2), barrelEnd = pointAt(10)
+      const flight = index % 2 ? '#f16b73' : '#69b8ed'
       return <g key={`${index}-${hit.base}-${hit.ratio}`} className="board-dart" aria-label={`${label(hit)} のダーツ`}>
-        <line x1={point.x + 3 * Math.cos(angle)} y1={point.y + 3 * Math.sin(angle)} x2={tailX} y2={tailY} stroke="#05080d" strokeWidth="5" strokeLinecap="round" opacity=".8" />
-        <line x1={point.x + 2 * Math.cos(angle)} y1={point.y + 2 * Math.sin(angle)} x2={tailX} y2={tailY} stroke={index % 2 ? '#f4c873' : '#dbe7f1'} strokeWidth="2.2" strokeLinecap="round" />
-        <path d={`M ${tailX} ${tailY} l ${-5 * Math.sin(angle)} ${5 * Math.cos(angle)} l ${-7 * Math.cos(angle)} ${-7 * Math.sin(angle)} l ${5 * Math.sin(angle)} ${-5 * Math.cos(angle)} Z`} fill={index % 2 ? '#ec6672' : '#30b8a1'} stroke="#111823" strokeWidth="1" />
-        <circle cx={point.x} cy={point.y} r="3.2" fill="#f7f5eb" stroke="#0a0e14" strokeWidth="1.5" />
+        <line x1={point.x + vx * 2} y1={point.y + vy * 2} x2={point.x + vx * 38} y2={point.y + vy * 38} stroke="#02050a" strokeWidth="8" strokeLinecap="round" opacity=".82" />
+        <line x1={barrelStart.x} y1={barrelStart.y} x2={barrelEnd.x} y2={barrelEnd.y} stroke="#f2c777" strokeWidth="4.5" strokeLinecap="round" />
+        <line x1={pointAt(3, 0.7).x} y1={pointAt(3, 0.7).y} x2={barrelEnd.x} y2={barrelEnd.y} stroke="#fff0c9" strokeWidth="1" strokeLinecap="round" opacity=".8" />
+        <line x1={point.x + vx * 10} y1={point.y + vy * 10} x2={point.x + vx * 38} y2={point.y + vy * 38} stroke="#dce5ed" strokeWidth="3" strokeLinecap="round" />
+        <line x1={point.x + vx * 13 + px * 1.4} y1={point.y + vy * 13 + py * 1.4} x2={point.x + vx * 15 + px * 1.4} y2={point.y + vy * 15 + py * 1.4} stroke="#8594a3" strokeWidth="1" />
+        <line x1={point.x + vx * 17 - px * 1.4} y1={point.y + vy * 17 - py * 1.4} x2={point.x + vx * 19 - px * 1.4} y2={point.y + vy * 19 - py * 1.4} stroke="#8594a3" strokeWidth="1" />
+        <path d={`M ${at(31, -1)} L ${at(45, -13)} L ${at(55, -8)} L ${at(38, 2)} Z`} fill={flight} stroke="#101722" strokeWidth="1.8" />
+        <path d={`M ${at(31, 1)} L ${at(45, 13)} L ${at(55, 8)} L ${at(38, -2)} Z`} fill={flight} stroke="#101722" strokeWidth="1.8" />
+        <path d={`M ${at(38, -6)} L ${at(51, 0)} L ${at(38, 6)} Z`} fill="#dce5ed" stroke="#101722" strokeWidth="1.4" />
+        <circle cx={point.x} cy={point.y} r="3.6" fill="#fff9e8" stroke="#17212d" strokeWidth="1.6" />
         <title>{label(hit)}</title>
       </g>
     })}
