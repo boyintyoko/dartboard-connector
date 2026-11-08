@@ -12,7 +12,14 @@
     "build": "yarn workspace @minimalcorp/dartboard-connector tsc",
     "build:watch": "yarn workspace @minimalcorp/dartboard-connector tsc -w",
     "start-example": "yarn workspace @minimalcorp/dartboard-connector-example next",
-    "ci": "yarn workspaces run ci"
+    "start-match-server": "node online-server.js",
+    "ci": "yarn workspaces run ci",
+    "test:game": "node tests/game-check.mjs",
+    "test:bluetooth": "tsc -p packages/dartboard-connector/tsconfig.json && node tests/bluetooth-check.mjs"
   },
-  "private": true
+  "private": true,
+  "dependencies": {
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4"
+  }
 }

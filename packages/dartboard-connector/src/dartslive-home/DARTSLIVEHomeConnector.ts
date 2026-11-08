@@ -43,11 +43,11 @@ export class DARTSLIVEHomeConnector implements DartsboardBluetoothConnector<Sign
   /**
    * Returns `unsubscribe` function.
    */
-  async subscribe(callback: (value: Signal) => void) {
+  async subscribe(callback: (value: Signal, raw?: { code: number; hex: string }) => void) {
     if (this._server == null) {
       throw new Error("No device has been connected. `connect` first.")
     }
-    const services = await this._server.getPrimaryServices()
+    const services = [await this._server.getPrimaryService(uuid)]
     if (services.length !== 1) {
       console.error(services)
       throw new Error("`getPrimaryServices` returns unexpected services. Please create issue with error logs.")
@@ -69,11 +69,20 @@ export class DARTSLIVEHomeConnector implements DartsboardBluetoothConnector<Sign
         throw new Error("target doesn't have 'value' field unexpectedly.")
       }
       const dataview = target.value
+      if (dataview.byteLength < 3) return
       const value = dataview.getUint8(2)
-      callback(format(value))
+      const hex = Array.from(new Uint8Array(dataview.buffer, dataview.byteOffset, dataview.byteLength))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(" ")
+      callback(format(value), { code: value, hex })
     }
     characteristic.addEventListener("characteristicvaluechanged", handler)
-    await characteristic.startNotifications()
+    try {
+      await characteristic.startNotifications()
+    } catch (error) {
+      characteristic.removeEventListener("characteristicvaluechanged", handler)
+      throw error
+    }
     return () => characteristic.removeEventListener("characteristicvaluechanged", handler)
   }
 }
