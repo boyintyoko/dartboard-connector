@@ -1,5 +1,5 @@
 export type Mode = '01' | 'cricket' | 'practice' | 'match' | 'robo'
-export type Hit = { base: number; ratio: number }
+export type Hit = { base: number; ratio: number; ring?: 'inner-single' | 'outer-single'; position?: { x: number; y: number } }
 export type OutRule = 'master' | 'double' | 'open'
 export type MatchLegMode = '01' | 'cricket' | 'choice'
 export type MatchLeadRule = 'loser' | 'alternate'

@@ -63,6 +63,7 @@ function GameResults({ game }: { game: Game }) {
 function Board({ onHit, disabled, darts = [], activeTarget }: { onHit: (hit: Hit) => void; disabled: boolean; darts?: Hit[]; activeTarget?: number | 'bull' | 'double' | 'triple' }) {
   const xy = (r: number, a: number) => `${200 + r * Math.sin(a)},${200 - r * Math.cos(a)}`
   const dartPosition = (hit: Hit, dartIndex: number) => {
+    if (hit.position && Number.isFinite(hit.position.x) && Number.isFinite(hit.position.y)) return hit.position
     if (hit.base === 25) {
       const angle = (dartIndex * 137.5 - 35) * Math.PI / 180
       return { x: 200 + (hit.ratio === 2 ? 4 : 12) * Math.cos(angle), y: 200 + (hit.ratio === 2 ? 4 : 12) * Math.sin(angle) }
@@ -74,9 +75,16 @@ function Board({ onHit, disabled, darts = [], activeTarget }: { onHit: (hit: Hit
     }
     const angle = (segment * 18 + (dartIndex % 3 - 1) * 4.8) * Math.PI / 180
     const radii: Record<number, [number, number]> = { 1: [38, 79], 2: [153, 160], 3: [96, 101] }
-    const [inner, outer] = radii[hit.ratio] || [112, 144]
+    const [inner, outer] = hit.ratio === 1 && hit.ring === 'outer-single' ? [112, 144] : radii[hit.ratio] || [112, 144]
     const radius = inner + (outer - inner) * (0.3 + (dartIndex % 2) * 0.35)
     return { x: 200 + radius * Math.sin(angle), y: 200 - radius * Math.cos(angle) }
+  }
+  const handleClick = (e: React.MouseEvent<SVGElement>, hit: Hit) => {
+    if (disabled) return
+    const matrix = e.currentTarget.ownerSVGElement?.getScreenCTM()
+    if (!matrix) { onHit(hit); return }
+    const point = new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse())
+    onHit({ ...hit, position: { x: point.x, y: point.y } })
   }
   const handleKey = (e: React.KeyboardEvent<SVGElement>, hit: Hit) => {
     if (disabled || !['Enter', ' '].includes(e.key)) return
@@ -88,14 +96,14 @@ function Board({ onHit, disabled, darts = [], activeTarget }: { onHit: (hit: Hit
       const a = (i * 18 - 9) * Math.PI / 180, b = (i * 18 + 9) * Math.PI / 180
       return <g key={n}>
         {[[16, 92, 1], [92, 104, 3], [104, 150, 1], [150, 164, 2]].map(([inner, outer, ratio], j) => {
-          const hit = { base: n, ratio }
+          const hit: Hit = { base: n, ratio, ...(ratio === 1 ? { ring: j === 0 ? 'inner-single' : 'outer-single' } : {}) }
           const isActive = activeTarget === n || activeTarget === 'double' && ratio === 2 || activeTarget === 'triple' && ratio === 3
-          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}`} onClick={() => !disabled && onHit(hit)} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke={isActive ? '#c4f36a' : '#0b111a'} strokeWidth={isActive ? 2.6 : 1.5} />
+          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}${hit.ring === 'outer-single' ? ' 外側シングル' : hit.ring === 'inner-single' ? ' 内側シングル' : ''}`} onClick={e => handleClick(e, hit)} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke={isActive ? '#c4f36a' : '#0b111a'} strokeWidth={isActive ? 2.6 : 1.5} />
         })}
         <text x={200 + 181 * Math.sin(i * Math.PI / 10)} y={205 - 181 * Math.cos(i * Math.PI / 10)} textAnchor="middle" fill="#e3e9ed" fontSize="15">{n}</text>
       </g>
     })}
-    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} stroke={activeTarget === 'bull' ? '#c4f36a' : 'none'} strokeWidth={activeTarget === 'bull' ? 3 : 0} role="button" tabIndex={disabled ? -1 : 0} aria-label={b.ratio === 1 ? 'S-BULL' : 'D-BULL'} onClick={() => !disabled && onHit({ base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} />)}
+    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} stroke={activeTarget === 'bull' ? '#c4f36a' : 'none'} strokeWidth={activeTarget === 'bull' ? 3 : 0} role="button" tabIndex={disabled ? -1 : 0} aria-label={b.ratio === 1 ? 'S-BULL' : 'D-BULL'} onClick={e => handleClick(e, { base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} />)}
     {darts.map((hit, index) => {
       const point = dartPosition(hit, index)
       const angle = (index * 37 - 132) * Math.PI / 180
@@ -463,7 +471,7 @@ export const Example = () => {
     if (remoteStream) void remoteVideo.current.play().catch(() => {})
   }, [remoteStream, remoteVideoActive])
   useEffect(() => {
-    if (!game || !isRoboGame(game) || game.active !== 1 || game.finished || game.match?.stage === 'cork-tie') return
+    if (!game || !isRoboGame(game) || game.active !== 1 || game.finished || game.bust || game.throws.length >= 3 || game.match?.stage === 'cork-tie') return
     const timer = window.setTimeout(() => {
       const previous = gameRef.current
       if (!previous || !isRoboGame(previous) || previous.active !== 1 || previous.finished || previous.match?.stage === 'cork-tie') return
@@ -479,26 +487,22 @@ export const Example = () => {
         commitGame(previous, throwCork(previous, hit))
         return
       }
-      let next = previous
-      for (let dart = 0; dart < 3; dart++) {
-        const level = difficulty === 'HARD' ? 0.68 : difficulty === 'NORMAL' ? 0.43 : 0.2
-        const cricket = previous.mode === 'cricket' || (previous.mode === 'match' || previous.mode === 'robo') && previous.legMode === 'cricket'
-        const own = next.players[1], opponent = next.players[0]
-        const target = cricket
-          ? targets.find(number => (own.marks[number] || 0) < 3 || (opponent.marks[number] || 0) < 3 && own.score < opponent.score) ?? 20
-          : 20
-        const canHit = Math.random() < level
-        const ratio = target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
-        const aim = roboAim(next)
-        const hit: Hit = cricket
-          ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
-          : canHit ? aim : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
-        next = previous.mode === 'match' && previous.match?.stage === 'cork' ? throwCork(next, hit) : throwDart(next, hit)
-        if (next.finished || next.bust || next.active !== previous.active || next.match?.legIndex !== previous.match?.legIndex || next.mode === 'match' && next.match?.stage !== 'playing') break
-      }
-      if (!next.finished && next.active === previous.active && next.match?.legIndex === previous.match?.legIndex && (next.mode !== 'match' || next.match?.stage === 'playing')) next = nextTurn(next)
-      commitGame(previous, next)
-    }, 900)
+      if (previous.bust || previous.throws.length >= 3) return
+      const level = difficulty === 'HARD' ? 0.68 : difficulty === 'NORMAL' ? 0.43 : 0.2
+      const cricket = previous.mode === 'cricket' || (previous.mode === 'match' || previous.mode === 'robo') && previous.legMode === 'cricket'
+      const own = previous.players[1], opponent = previous.players[0]
+      const target = cricket
+        ? targets.find(number => (own.marks[number] || 0) < 3 || (opponent.marks[number] || 0) < 3 && own.score < opponent.score) ?? 20
+        : 20
+      const canHit = Math.random() < level
+      const ratio = target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
+      const aim = roboAim(previous)
+      const hit: Hit = cricket
+        ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
+        : canHit ? aim : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
+      if (hit.base !== 0 && hit.base !== 25 && hit.ratio === 1) hit.ring = Math.random() < .5 ? 'inner-single' : 'outer-single'
+      commitGame(previous, throwDart(previous, hit), hit)
+    }, game.throws.length ? 1100 : 900)
     return () => window.clearTimeout(timer)
   }, [game, difficulty, commitGame])
   useEffect(() => {
@@ -511,7 +515,7 @@ export const Example = () => {
       if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
       autoChangedTurn.current = completedTurn
       commitGame(current, nextTurn(current))
-    }, game.bust ? 700 : 650)
+    }, isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
     return () => window.clearTimeout(timer)
   }, [game, onlineStatus, onlineSeat, commitGame])
 
