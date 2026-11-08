@@ -46,6 +46,7 @@ export const targets = [20, 19, 18, 17, 16, 15, 25]
 export const practiceTargets = [20, 19, 18, 17, 16, 15, 25]
 export const halfItTargets = ['15', '16', 'D', '17', '18', 'T', '19', '20', 'BULL'] as const
 export const practiceTargetForRound = (game: Game) => {
+  if (game.practiceMode === 'count-up') return 'ALL NUMBERS'
   if (game.practiceMode === 'cricket-count-up') return practiceTargets[Math.min(game.round - 1, practiceTargets.length - 1)]
   if (game.practiceMode === 'half-it') return halfItTargets[game.round - 1] || 'FINISH'
   if (game.practiceMode === 'shoot-out') return game.practiceOpened.filter(n => n !== 25).length < 20 ? `×${game.practiceOpened.length + 1}` : 'BULL BONUS'
@@ -59,6 +60,18 @@ export const isX01 = (mode: Mode | 'choice') => mode === '01' || mode === 'match
 export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 'robo' ? game.legMode === '01' : isX01(game.mode)
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
 export const points = (hit: Hit, bull: Game['bull']) => hit.base === 25 && bull === 'fat' ? 50 : hit.base * hit.ratio
+export function roboAim(game: Game): Hit {
+  const remaining = game.players[game.active].score
+  const ratios = game.outRule === 'double' ? [2] : game.outRule === 'master' ? [2, 3] : [1, 2, 3]
+  for (const ratio of ratios) {
+    for (const base of [...Array.from({ length: 20 }, (_, i) => 20 - i), 25]) {
+      if (points({ base, ratio }, game.bull) === remaining && (base !== 25 || ratio <= 2)) return { base, ratio }
+    }
+  }
+  if (remaining > 62) return { base: 20, ratio: 3 }
+  if (remaining > 40 && remaining <= 60) return { base: remaining - 40, ratio: 1 }
+  return { base: remaining % 2 ? 1 : Math.min(20, Math.max(1, remaining - 2)), ratio: 1 }
+}
 
 function newPlayers(names: string[], initial: number, gameMode: '01' | 'cricket'): Player[] {
   return names.map((name, i) => ({ name: name.trim() || `PLAYER ${i + 1}`, score: gameMode === '01' ? initial : 0, marks: {}, darts: 0, points: 0 }))
@@ -162,12 +175,12 @@ export function chooseMatchGame(game: Game, legMode: '01' | 'cricket', initial: 
 
 export function throwDart(game: Game, hit: Hit): Game {
   if (game.finished || game.throws.length >= 3 || game.bust || game.mode === 'match' && game.match?.stage !== 'playing') return game
-  const g: Game = { ...game, players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
+  const g: Game = { ...game, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
   const p = g.players[g.active]
   p.darts++
   const value = points(hit, g.bull)
   if (isX01Game(g)) {
-    if (p.score - value < 0) { p.score = g.turnStart; g.bust = true; g.message = 'BUST' }
+    if (p.score - value < 0 || p.score - value === 1 && g.outRule !== 'open') { p.points -= g.turnStart - p.score; p.score = g.turnStart; g.bust = true; g.message = 'BUST' }
     else {
       p.score -= value; p.points += value
       if (p.score === 0) {
@@ -175,7 +188,7 @@ export function throwDart(game: Game, hit: Hit): Game {
           ? hit.base !== 0
           : g.outRule === 'master' ? hit.ratio >= 2 : hit.ratio === 2
         if (checkoutAllowed) { g.finished = true; g.winner = g.active }
-        else { p.score = g.turnStart; g.bust = true; g.message = `BUST · ${g.outRule.toUpperCase()} OUT` }
+        else { p.points -= g.turnStart; p.score = g.turnStart; g.bust = true; g.message = `BUST · ${g.outRule.toUpperCase()} OUT` }
       }
     }
   } else if (g.mode === 'practice') {
@@ -219,12 +232,15 @@ export function throwDart(game: Game, hit: Hit): Game {
   }
   if (g.finished && g.mode === 'match' && g.winner !== null) return prepareNextLeg(g, g.winner)
   if (g.finished) g.message = `${p.name} WINS!`
-  else if (!g.bust) g.message = g.throws.length === 3 ? 'REMOVE DARTS · CHANGE' : label(hit)
+  else if (!g.bust && g.mode !== 'practice') g.message = g.throws.length === 3 ? 'REMOVE DARTS · CHANGE' : label(hit)
   return g
 }
 
 export function nextTurn(game: Game): Game {
   if (game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return game
+  if (game.mode === 'practice' && game.practiceMode !== 'target') {
+    while (game.throws.length < 3 && !game.finished) game = throwDart(game, { base: 0, ratio: 1 })
+  }
   if (game.mode === 'practice' && game.practiceMode !== 'target' && game.throws.length > 0 && game.active === 0 && game.round >= game.limit) {
     return { ...game, finished: true, winner: 0, message: 'PRACTICE COMPLETE' }
   }

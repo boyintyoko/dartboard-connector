@@ -4,7 +4,7 @@ import { DARTSLIVEHomeConnector } from '@minimalcorp/dartboard-connector/dartsli
 import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
+import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -489,13 +489,14 @@ export const Example = () => {
           : 20
         const canHit = Math.random() < level
         const ratio = target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
+        const aim = roboAim(next)
         const hit: Hit = cricket
           ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
-          : canHit ? { base: 20, ratio: Math.random() < level * .55 ? 3 : 1 } : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
+          : canHit ? aim : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
         next = previous.mode === 'match' && previous.match?.stage === 'cork' ? throwCork(next, hit) : throwDart(next, hit)
-        if (next.finished) break
+        if (next.finished || next.bust || next.active !== previous.active || next.match?.legIndex !== previous.match?.legIndex || next.mode === 'match' && next.match?.stage !== 'playing') break
       }
-      if (!next.finished) next = nextTurn(next)
+      if (!next.finished && next.active === previous.active && next.match?.legIndex === previous.match?.legIndex && (next.mode !== 'match' || next.match?.stage === 'playing')) next = nextTurn(next)
       commitGame(previous, next)
     }, 900)
     return () => window.clearTimeout(timer)
@@ -576,9 +577,9 @@ export const Example = () => {
           {(mode === '01' || mode === 'match' || mode === 'robo' && (roboGameMode === '01' || roboGameMode === 'match')) && <div className="setup-block"><h2>スタートスコア</h2><div className="segmented score-options">{(mode === '01' ? [301,501,701,901,1101,1501] : [301,501,701,901]).map(score => <button className={initial===score?'chosen':''} key={score} onClick={() => setInitial(score)}>{score}</button>)}</div></div>}
           {(mode === '01' || mode === 'match' || mode === 'robo' && (roboGameMode === '01' || roboGameMode === 'match')) && <div className="setup-block"><h2>上がり方</h2><div className="segmented"><button className={outRule==='master'?'chosen':''} onClick={() => setOutRule('master')}>MASTER OUT</button><button className={outRule==='double'?'chosen':''} onClick={() => setOutRule('double')}>DOUBLE OUT</button><button className={outRule==='open'?'chosen':''} onClick={() => setOutRule('open')}>OPEN OUT</button></div></div>}
           {(mode === 'match' || mode === 'robo' && roboGameMode === 'match') && <><div className="setup-block"><h2>メドレー</h2><div className="segmented"><button className={matchBestOf===3?'chosen':''} onClick={() => setMatchBestOf(3)}>BEST OF 3 <small>01 · CR · CH</small></button><button className={matchBestOf===5?'chosen':''} onClick={() => setMatchBestOf(5)}>BEST OF 5 <small>01 · CR · CR · 01 · CH</small></button></div><p className="setup-hint">必要勝利数に先に達した時点で終了します。</p></div><div className="setup-block"><h2>2レグ目以降の先攻</h2><div className="segmented"><button className={matchLeadRule==='loser'?'chosen':''} onClick={() => setMatchLeadRule('loser')}>LOSER · 前レグの敗者</button><button className={matchLeadRule==='alternate'?'chosen':''} onClick={() => setMatchLeadRule('alternate')}>ALTERNATE · 交互</button></div></div></>}
-          {mode !== 'robo' && <div className="setup-block"><h2>プレイヤー</h2><div className="segmented player-count">{[1,2,3,4].map(n=><button className={count===n?'chosen':''} key={n} onClick={() => setCount(n)}>{n}<small>人</small></button>)}</div>{names.slice(0,count).map((name,i)=><label className="player-name" key={i}><span>P{i+1}</span><input aria-label={`プレイヤー${i+1}`} value={name} maxLength={20} onChange={e=>setNames(old=>old.map((v,j)=>i===j?e.target.value:v))}/></label>)}{mode==='cricket'&&count===1&&<p className="setup-hint">15〜20とBULLをすべてクローズすると終了します。ラウンド制限はありません。</p>}</div>}
+          {mode !== 'robo' && <div className="setup-block"><h2>プレイヤー</h2><div className="segmented player-count">{(mode === 'match' ? [2] : [1,2,3,4]).map(n=><button className={count===n?'chosen':''} key={n} onClick={() => setCount(n)}>{n}<small>人</small></button>)}</div>{names.slice(0,count).map((name,i)=><label className="player-name" key={i}><span>P{i+1}</span><input aria-label={`プレイヤー${i+1}`} value={name} maxLength={20} onChange={e=>setNames(old=>old.map((v,j)=>i===j?e.target.value:v))}/></label>)}{mode==='cricket'&&count===1&&<p className="setup-hint">15〜20とBULLをすべてクローズすると終了します。ラウンド制限はありません。</p>}</div>}
           {mode === 'robo' && <div className="setup-block"><h2>CPUレベル</h2><div className="segmented">{(['EASY','NORMAL','HARD'] as const).map(level=><button className={difficulty===level?'chosen':''} key={level} onClick={()=>setDifficulty(level)}>{level}</button>)}</div></div>}
-          {mode !== 'robo' && <div className="setup-block"><h2>ブル</h2><div className="segmented"><button className={bull==='fat'?'chosen':''} onClick={()=>setBull('fat')}>FAT BULL · 50</button><button className={bull==='split'?'chosen':''} onClick={()=>setBull('split')}>SPLIT · 25 / 50</button></div></div>}
+          {<div className="setup-block"><h2>ブル</h2><div className="segmented"><button className={bull==='fat'?'chosen':''} onClick={()=>setBull('fat')}>FAT BULL · 50</button><button className={bull==='split'?'chosen':''} onClick={()=>setBull('split')}>SEPARATE · 25 / 50</button></div></div>}
         </>}
         {mode === 'match' && count<2 && <p className="setup-hint">MATCHは2人以上でプレイします。</p>}
         <button className="primary-button" disabled={mode==='match'&&count<2} onClick={start}>{mode==='practice'?'練習をはじめる':'ゲームをはじめる'} <span>→</span></button>
