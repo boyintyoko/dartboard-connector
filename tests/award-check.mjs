@@ -38,4 +38,18 @@ for(const [hits,title,call] of [
 }
 g=visit(createGame('cricket',['A','B']),[[20,3],[19,3],[18,3]])
 assert.equal(g.award.title,'WHITE HORSE');assert.equal(g.award.call,'ナイスホース！')
+// WHITE HORSE follows the physical three-distinct-triples condition, including closed numbers.
+for (const mode of ['cricket','robo','match']) {
+  g=createGame(mode,['A','B'],701,'fat','open',20,3,'loser','cricket')
+  if(mode==='match'){g=resolveMatchCoinToss(g,0);g.legMode='cricket'}
+  g.players.forEach(p=>{p.marks[20]=3;p.marks[19]=3;p.marks[18]=3})
+  g=visit(g,[[20,3],[19,3],[18,3]])
+  assert.equal(g.turnMarks,0)
+  assert.equal(g.award.title,'WHITE HORSE')
+}
+g=createGame('cricket',['A']);g.players[0].marks[20]=3
+g=visit(g,[[18,3],[20,3],[19,3]])
+assert.equal(g.award.title,'WHITE HORSE')
+g=visit(createGame('cricket',['A','B']),[[20,3],[19,3],[14,3]])
+assert.notEqual(g.award?.title,'WHITE HORSE')
 console.log('PASS: all awards and Japanese calls, priority, exact scores, valid cricket areas, bust exclusion, early checkout and MATCH transition preservation')
