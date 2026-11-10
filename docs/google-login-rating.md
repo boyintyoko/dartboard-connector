@@ -18,6 +18,14 @@ The last 30 eligible results are averaged separately by mode. Each average maps 
 
 Source: https://dlservicehelp.dartslive.com/hc/ja/articles/360058145813
 
-## Verification pending configuration
+## Hosted project
 
-Test real Google sign-in and callback, logout, result persistence, repeat insertion, user A/user B isolation and anonymous denial against the selected project. Confirm `pg_policies`, table grants, and a read query after applying SQL. Run Supabase security advisors. No production Supabase project has been changed until connection access and the target project are confirmed.
+Project: `darts-room` (`qvtscshjtxvidnpfssuj`), Tokyo, in `boyintyoko's Org`. Created with a $0/month project quote. API URL and publishable key are configured on Render; no service-role key is exposed. The `create_darts_game_results` migration is applied remotely.
+
+Verified with two temporary test users inside a rolled-back transaction: own insert/read, duplicate-ignore inserts, other-user read denial, other-user insert denial, anonymous read denial. All passed. Security advisors returned no findings. Test data was rolled back.
+
+Google is not enabled yet. Google Cloud Client ID/Secret and Supabase Site URL/redirects still need dashboard setup. The application checks provider readiness and keeps the login button disabled until the provider is enabled.
+
+## Verification pending Google setup
+
+Test real Google sign-in and callback, logout, result persistence, repeat insertion, user A/user B isolation and anonymous denial against the selected project. Database policies and security advisors have passed. Real Google sign-in and cross-device persistence require the Google provider setup above.

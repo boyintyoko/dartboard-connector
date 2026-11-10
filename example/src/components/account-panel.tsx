@@ -10,6 +10,7 @@ type PendingResult = SavedResult & { user_id: string }
 export function AccountPanel({ game, seat }: { game: Game | null; seat: number | null }) {
   const [client, setClient] = useState<SupabaseClient | null>(null)
   const [ready, setReady] = useState(false)
+  const [googleEnabled, setGoogleEnabled] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [results, setResults] = useState<SavedResult[]>([])
   const [error, setError] = useState('')
@@ -28,7 +29,10 @@ export function AccountPanel({ game, seat }: { game: Game | null; seat: number |
       if (!response.ok) throw new Error('ログイン設定を取得できませんでした。')
       return response.json()
     }).then(config => {
-      if (live && config.configured) setClient(createClient(config.url, config.key))
+      if (live && config.configured) {
+        setClient(createClient(config.url, config.key)); setGoogleEnabled(config.googleEnabled === true)
+        if (config.providerCheckFailed) setError('Google認証の設定を確認できませんでした。ページを再読み込みしてください。')
+      }
       if (live && !config.configured) setReady(true)
     }).catch(cause => { if (live) { setError(String(cause.message)); setReady(true) } })
     return () => { live = false }
@@ -92,7 +96,7 @@ export function AccountPanel({ game, seat }: { game: Game | null; seat: number |
   }, [client, user?.id, queue, refresh])
 
   const login = async () => {
-    if (!client) return
+    if (!client || !googleEnabled) return
     setError(''); setLoginBusy(true)
     try {
       const { error: cause } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } })
@@ -108,8 +112,8 @@ export function AccountPanel({ game, seat }: { game: Game | null; seat: number |
   const summary = summarizeRating(results)
   return <section className="account-panel" aria-label="アカウントとレーティング">
     <div className="account-identity"><span className="kicker">MY ACCOUNT</span><strong>{user ? user.user_metadata.full_name || user.email || 'PLAYER' : 'ゲスト'}</strong>
-      {user ? <button onClick={() => void logout()}>ログアウト</button> : <button disabled={!client || !ready || loginBusy || !!game && !game.finished} onClick={() => void login()}>{loginBusy ? 'Googleへ移動中…' : 'Googleでログイン'}</button>}
-      {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}
+      {user ? <button onClick={() => void logout()}>ログアウト</button> : <button disabled={!client || !ready || !googleEnabled || loginBusy || !!game && !game.finished} onClick={() => void login()}>{loginBusy ? 'Googleへ移動中…' : 'Googleでログイン'}</button>}
+      {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}{ready && client && !googleEnabled && !user && <small>Googleログイン準備中</small>}
     </div>
     <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(1) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム` : 'ログインして対人成績を記録'}</small></div>
     <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span></div>

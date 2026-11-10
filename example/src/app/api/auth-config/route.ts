@@ -8,5 +8,14 @@ export async function GET() {
     try { publicKey = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString()).role === 'anon' } catch { /* Invalid key. */ }
   }
   if (!url || !key || !publicKey) return Response.json({ configured: false }, { headers: { 'Cache-Control': 'no-store' } })
-  return Response.json({ configured: true, url, key }, { headers: { 'Cache-Control': 'no-store' } })
+  let googleEnabled = false, providerCheckFailed = false
+  try {
+    const response = await fetch(`${url.replace(/\/$/, '')}/auth/v1/settings`, {
+      headers: { apikey: key }, cache: 'no-store', signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) throw new Error('Auth settings unavailable')
+    const settings = await response.json()
+    googleEnabled = settings.external?.google === true
+  } catch { providerCheckFailed = true }
+  return Response.json({ configured: true, url, key, googleEnabled, providerCheckFailed }, { headers: { 'Cache-Control': 'no-store' } })
 }
