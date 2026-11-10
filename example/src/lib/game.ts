@@ -285,7 +285,7 @@ export function throwDart(game: Game, hit: Hit): Game {
     const available = !cricket || g.turnMarks === g.throws.reduce((sum, dart) => sum + dart.ratio, 0)
     const black = three && g.throws.every(dart => dart.base === 25 && dart.ratio === 2)
     const ton80 = available && three && g.throws.every(dart => dart.base === 20 && dart.ratio === 3)
-    const horse = cricket && g.turnMarks === 9 && three && g.throws.every(dart => dart.base >= 15 && dart.base <= 20 && dart.ratio === 3) && new Set(g.throws.map(dart => dart.base)).size === 3
+    const horse = cricket && three && g.throws.every(dart => dart.base >= 15 && dart.base <= 20 && dart.ratio === 3) && new Set(g.throws.map(dart => dart.base)).size === 3
     const bed = available && three && g.throws[0].base !== 25 && g.throws[0].base !== 0 && g.throws[0].ratio >= 2 && g.throws.every(dart => dart.base === g.throws[0].base && dart.ratio === g.throws[0].ratio)
     const title = black ? 'THREE IN THE BLACK' : ton80 ? 'TON80' : bulls === 3 ? 'HAT TRICK' : horse ? 'WHITE HORSE' : bed ? 'THREE IN A BED' : cricket && (g.turnMarks || 0) >= 5 ? `${g.turnMarks} MARKS` : !cricket && score >= 151 && score <= 177 ? 'HIGH TON' : !cricket && score >= 100 && score <= 150 ? 'LOW TON' : bulls === 1 ? 'ONE BULL' : null
     const calls: Record<string, string> = {
