@@ -71,14 +71,37 @@ export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
 export const points = (hit: Hit, bull: Game['bull']) => hit.base === 25 && bull === 'fat' ? 50 : hit.base * hit.ratio
 export function roboAim(game: Game): Hit {
-  const remaining = game.players[game.active].score
+  const player = game.players[game.active]
+  const remaining = player.score
+  const cricket = (game.mode === 'cricket' || game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
+  if (cricket) {
+    const opponent = game.players.find((_, index) => index !== game.active)
+    if (!opponent) return { base: 20, ratio: 3 }
+    const openTargets = targets.filter(target => (player.marks[target] || 0) < 3)
+    const threats = openTargets.filter(target => (opponent.marks[target] || 0) < 3)
+    const canScore = openTargets.filter(target => (opponent.marks[target] || 0) >= 3)
+    if (threats.length && player.score >= opponent.score) {
+      const target = threats[0]
+      return { base: target, ratio: Math.min(3, 3 - (player.marks[target] || 0)) }
+    }
+    if (canScore.length) {
+      const target = canScore[0]
+      return { base: target, ratio: 3 }
+    }
+    if (threats.length) {
+      const target = threats[0]
+      return { base: target, ratio: Math.min(3, 3 - (player.marks[target] || 0)) }
+    }
+    return { base: 20, ratio: 3 }
+  }
   const ratios = game.outRule === 'double' ? [2] : game.outRule === 'master' ? [2, 3] : [1, 2, 3]
   for (const ratio of ratios) {
     for (const base of [...Array.from({ length: 20 }, (_, i) => 20 - i), 25]) {
       if (points({ base, ratio }, game.bull) === remaining && (base !== 25 || ratio <= 2)) return { base, ratio }
     }
   }
-  if (remaining > 62) return { base: 20, ratio: 3 }
+  if (game.bull === 'fat' && remaining > 50) return { base: 25, ratio: 1 }
+  if (remaining > 62) return game.bull === 'fat' ? { base: 25, ratio: 1 } : { base: 20, ratio: 3 }
   if (remaining > 40 && remaining <= 60) return { base: remaining - 40, ratio: 1 }
   return { base: remaining % 2 ? 1 : Math.min(20, Math.max(1, remaining - 2)), ratio: 1 }
 }
