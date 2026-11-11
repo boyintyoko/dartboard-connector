@@ -339,7 +339,9 @@ export function nextTurn(game: Game): Game {
     while (game.throws.length < 3 && !game.finished) game = throwDart(game, { base: 0, ratio: 1 })
   }
   if (game.mode === 'practice' && game.practiceMode !== 'target' && game.throws.length > 0 && game.active === 0 && game.round >= game.limit) {
-    return { ...game, finished: true, winner: 0, message: 'PRACTICE COMPLETE' }
+    const best = Math.max(...game.players.map(player => player.score))
+    const leaders = game.players.flatMap((player, index) => player.score === best ? [index] : [])
+    return { ...game, finished: true, winner: leaders.length === 1 ? leaders[0] : null, message: leaders.length === 1 ? `${game.players[leaders[0]].name} WINS!` : 'PRACTICE DRAW' }
   }
   const active = (game.active + 1) % game.players.length
   const round = game.round + (active === 0 ? 1 : 0)
