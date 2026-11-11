@@ -224,6 +224,7 @@ export const Example = () => {
     return () => window.clearTimeout(timer)
   }, [game?.award?.id])
   const autoChangedTurn = useRef<Game | null>(null)
+  const onlineTurnTimer = useRef<number | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
   const soundRef = useRef(sound); soundRef.current = sound
@@ -370,6 +371,20 @@ export const Example = () => {
     if (resolved === previous) return
     gameRef.current = resolved; setHistory(items => resolved.ratingResults.length > previous.ratingResults.length ? [] : [...items, previous]); setGame(resolved)
     if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
+    if (onlineStatus === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)) {
+      if (onlineTurnTimer.current !== null) window.clearTimeout(onlineTurnTimer.current)
+      onlineTurnTimer.current = window.setTimeout(() => {
+        const current = gameRef.current
+        if (current !== resolved || current.finished) return
+        const changed = nextTurn(current)
+        const next = current.award ? { ...changed, award: current.award } : changed
+        gameRef.current = next
+        setHistory([])
+        setGame(next)
+        onlineSocket.current?.emit('match:state', next)
+        onlineTurnTimer.current = null
+      }, 650)
+    }
     if (hit) playSound(hit)
   }, [onlineStatus, playSound, onlineSeat])
   const apply = useCallback((action: 'next' | Hit) => {
@@ -555,8 +570,7 @@ export const Example = () => {
     return () => window.clearTimeout(timer)
   }, [game, difficulty, commitGame, awardPlaying])
   useEffect(() => {
-    if (awardPlaying && onlineStatus !== 'matched' || !game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
-    if (onlineStatus === 'matched' && onlineSeat !== 0) return
+    if (onlineStatus === 'matched' || awardPlaying || !game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
     if ((!game.bust && game.throws.length !== 3) || autoChangedTurn.current === game) return
     const completedTurn = game
     const timer = window.setTimeout(() => {
@@ -564,7 +578,7 @@ export const Example = () => {
       if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
       autoChangedTurn.current = completedTurn
       const changed = nextTurn(current)
-      commitGame(current, current.award && onlineStatus === 'matched' ? { ...changed, award: current.award } : changed)
+      commitGame(current, changed)
     }, game.award ? 180 : isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
     return () => window.clearTimeout(timer)
   }, [game, onlineStatus, onlineSeat, commitGame, awardPlaying])
