@@ -246,7 +246,9 @@ export const Example = () => {
       }
       setRelayConfigured(iceServers.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => /^(turn|turns):/i.test(url))))
       const peer = new RTCPeerConnection({ iceServers })
-      peer.addTransceiver('video', { direction: 'sendrecv' })
+      // The answerer must use the transceiver created by the remote offer.
+      // Pre-creating one there leaves an unused sender with no negotiated MID.
+      if (onlineSeatRef.current === 0) peer.addTransceiver('video', { direction: 'sendrecv' })
       peer.onicecandidate = event => {
         if (event.candidate) onlineSocket.current?.emit('match:signal', { type: 'candidate', candidate: event.candidate.toJSON() })
       }
@@ -330,7 +332,8 @@ export const Example = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' }, audio: false })
       const track = stream.getVideoTracks()[0]
       const peer = await ensurePeerConnection()
-      const transceiver = peer.getTransceivers().find(item => item.receiver.track.kind === 'video')
+      const videoTransceivers = peer.getTransceivers().filter(item => item.receiver.track.kind === 'video')
+      const transceiver = videoTransceivers.find(item => item.mid !== null) || videoTransceivers[0]
       if (transceiver) await transceiver.sender.replaceTrack(track)
       else peer.addTrack(track, stream)
       localStreamRef.current = stream
@@ -487,6 +490,12 @@ export const Example = () => {
         if (signal.type === 'offer') {
           if (onlineSeatRef.current !== 1) return
           await peer.setRemoteDescription(new RTCSessionDescription(signal.description))
+          const videoTransceiver = peer.getTransceivers().find(item => item.mid !== null && item.receiver.track.kind === 'video')
+          if (videoTransceiver) {
+            videoTransceiver.direction = 'sendrecv'
+            const localTrack = localStreamRef.current?.getVideoTracks()[0]
+            if (localTrack) await videoTransceiver.sender.replaceTrack(localTrack)
+          }
           for (const candidate of pendingCandidates.current.splice(0)) await peer.addIceCandidate(new RTCIceCandidate(candidate))
           const answer = await peer.createAnswer()
           await peer.setLocalDescription(answer)
