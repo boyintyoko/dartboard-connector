@@ -123,3 +123,24 @@
  .match-video-controls{gap:5px}
  .match-video-controls button{padding:8px 12px}
 }
+
+/* A single large opponent feed mirrors the monitor-first match layout. */
+.match-video-stage{position:relative;min-width:0;aspect-ratio:16/9;max-height:175px;overflow:hidden;background:#080c12;border:1px solid var(--stroke)}
+.match-video-stage .match-video-opponent{position:absolute;inset:0;width:100%;height:100%;max-height:none;min-height:0;aspect-ratio:auto;border:0}
+.match-video-stage .match-video-self{display:none}
+.cricket-video-panel .match-video-self{display:grid;position:absolute;z-index:2;right:9px;bottom:9px;width:22%;height:auto;aspect-ratio:16/9;min-height:0;max-height:none;border:2px solid var(--surface);box-shadow:0 4px 18px #0009;font-size:9px}
+.match-video-stage .match-video-self>small{left:4px;bottom:4px;font-size:8px}
+.score-card{position:relative}
+.score-card.active:before{content:'NOW';position:absolute;right:8px;top:7px;color:var(--lime);font:600 8px 'Barlow Condensed',sans-serif;letter-spacing:1px}
+.cricket-score{background:#0d141d;border:1px solid var(--stroke);font-variant-numeric:tabular-nums}
+.cricket-score thead{background:#152131}
+.cricket-score th:first-child{text-align:left;color:#d1dae3}
+.cricket-score td{width:28px;border-left:1px solid #202b38}
+.cricket-score td.closed{background:#c4f36a12}
+.game-view:has(.match-video-panel) .main-score{display:none}
+.game-view:has(.match-video-panel) .score-card>b{font-size:clamp(36px,5vh,54px);line-height:1}
+.game-view:has(.match-video-panel) .score-card{min-height:86px;justify-content:center}
+@media (min-width:761px) and (min-height:650px){
+ .match-video-stage{max-height:min(15vh,160px)}
+ .cricket-video-panel .match-video-self{right:7px;bottom:7px;width:21%}
+}
