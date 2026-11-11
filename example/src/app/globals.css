@@ -90,3 +90,36 @@
   .match-video-frame>small{left:3px;bottom:2px;font-size:7px;padding:1px 3px}
   .match-video-controls button{min-height:28px;padding:0 6px;font-size:8px}
 }
+
+/* Keep the full match console visible on landscape monitors. Short screens use
+   compact rows while phones and portrait displays keep normal page scrolling. */
+@media (min-width:761px) and (min-height:650px){
+ html:has(.game-view),body:has(.game-view){height:100%;overflow:hidden}
+ .app-shell:has(.game-view){height:100dvh;min-height:0;overflow:hidden}
+ .app-shell:has(.game-view) .topbar{height:clamp(54px,7vh,76px)}
+ .game-view{min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:clamp(6px,1.2vh,14px) 0}
+ .game-toolbar{flex:none;padding-bottom:clamp(5px,1vh,11px)}
+ .score-strip{flex:none;padding:clamp(5px,.9vh,10px) 0;gap:7px}
+ .score-card{padding:clamp(6px,.9vh,10px) 12px;gap:4px}
+ .score-card>b{font-size:clamp(23px,3.4vh,34px)}
+ .play-layout{flex:1;min-height:0;overflow:hidden;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(12px,2vw,26px);padding-top:6px}
+ .turn-panel{min-height:0;display:flex;flex-direction:column;justify-content:center}
+ .main-score{font-size:clamp(64px,11vh,126px)}
+ .throw-message{height:clamp(18px,3vh,28px)}
+ .dart-slots{margin:clamp(4px,.8vh,9px) 0}
+ .dart-slots>div{padding:clamp(5px,.8vh,10px) 3px}
+ .next-turn{min-height:42px;margin-top:clamp(5px,1vh,12px);padding-top:8px;padding-bottom:8px}
+ .play-controls button,.play-controls label{min-height:30px}
+ .board-wrap{max-height:100%;padding:clamp(7px,1vh,13px);display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+ .board-wrap .board{height:min(44vh,440px,calc(100dvh - 525px));width:auto;max-width:100%;aspect-ratio:1;flex:none}
+ .board-title{flex:none}
+ .cricket-score{flex:none;margin:0 0 clamp(3px,.6vh,7px);font-size:clamp(10px,1.45vh,13px)}
+ .cricket-score th,.cricket-score td{padding:clamp(1px,.25vh,3px) 4px;line-height:1.05}
+ .cricket-score td{font-size:clamp(13px,2vh,18px)}
+ .app-shell:has(.game-view)>.app-footer{display:none}
+ .match-video-panel{margin-top:clamp(5px,.8vh,10px);padding:clamp(5px,.8vh,10px);gap:8px 12px}
+ .match-video-feeds{gap:7px}
+ .match-video-frame{min-height:0;max-height:min(14vh,150px)}
+ .match-video-controls{gap:5px}
+ .match-video-controls button{padding:8px 12px}
+}
