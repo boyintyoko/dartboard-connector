@@ -144,13 +144,3 @@
  .match-video-stage{max-height:min(15vh,160px)}
  .cricket-video-panel .match-video-self{right:7px;bottom:7px;width:21%}
 }
-
-/* Fix monitor layout clipping: allocate the board's remaining height explicitly. */
-@media (min-width:761px) and (min-height:650px){
- .play-layout,.board-wrap{min-height:0}
- .board-wrap{height:100%;max-height:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr);justify-items:center;align-content:stretch}
- .cricket-score{width:100%;margin:0 0 3px;align-self:stretch}
- .board-wrap .board{height:100%;width:auto;max-width:100%;max-height:100%;min-height:0;aspect-ratio:1;object-fit:contain;margin:2px auto 0}
- .turn-panel{justify-content:flex-start;padding-top:clamp(8px,2vh,20px)}
- .match-video-stage{width:min(100%,60vh);height:auto;max-height:none;aspect-ratio:16/9}
-}
