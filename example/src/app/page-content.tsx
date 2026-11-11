@@ -224,7 +224,6 @@ export const Example = () => {
     return () => window.clearTimeout(timer)
   }, [game?.award?.id])
   const autoChangedTurn = useRef<Game | null>(null)
-  const onlineTurnTimer = useRef<number | null>(null)
   onlineSeatRef.current = onlineSeat
   const gameRef = useRef<Game | null>(game); gameRef.current = game
   const soundRef = useRef(sound); soundRef.current = sound
@@ -365,26 +364,17 @@ export const Example = () => {
     }
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit) => {
-    const resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
+    let resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
+    const completedOnlineTurn = onlineStatus === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
+    if (completedOnlineTurn && !resolved.finished) {
+      const award = resolved.award
+      resolved = { ...nextTurn(resolved), award }
+    }
     if (resolved === previous) return
     gameRef.current = resolved; setHistory(items => resolved.ratingResults.length > previous.ratingResults.length ? [] : [...items, previous]); setGame(resolved)
     if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
-    if (onlineStatus === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)) {
-      if (onlineTurnTimer.current !== null) window.clearTimeout(onlineTurnTimer.current)
-      onlineTurnTimer.current = window.setTimeout(() => {
-        const current = gameRef.current
-        if (current !== resolved || current.finished) return
-        const changed = nextTurn(current)
-        const next = current.award ? { ...changed, award: current.award } : changed
-        gameRef.current = next
-        setHistory([])
-        setGame(next)
-        onlineSocket.current?.emit('match:state', next)
-        onlineTurnTimer.current = null
-      }, 650)
-    }
     if (hit) playSound(hit)
   }, [onlineStatus, playSound, onlineSeat])
   const apply = useCallback((action: 'next' | Hit) => {
