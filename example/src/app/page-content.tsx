@@ -179,10 +179,9 @@ export const Example = () => {
   const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL')
   const [roboGameMode, setRoboGameMode] = useState<'01' | 'cricket' | 'match'>('01')
   const [sound, setSound] = useState(true)
-  const [manual, setManual] = useState(false)
+  const [manual, setManual] = useState(true)
   const [game, setGame] = useState<Game | null>(null)
   const [history, setHistory] = useState<Game[]>([])
-  const [lastInput, setLastInput] = useState('')
   const [onlineStatus, setOnlineStatus] = useState<'offline' | 'connecting' | 'searching' | 'matched'>('offline')
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
   const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
@@ -388,11 +387,9 @@ export const Example = () => {
         : chooseMatchGame(game, value as '01' | 'cricket', initial)
     commitGame(game, next)
   }
-  const receive = useCallback((signal: BoardSignal, raw?: { code: number; hex: string }) => {
+  const receive = useCallback((signal: BoardSignal) => {
     const previous = gameRef.current
     const result = receiveBoardSignal(previous, signal)
-    const rawText = raw ? ` · ${raw.code} [${raw.hex}]` : ''
-    setLastInput(`${signal.type === 'change' ? 'CHANGE' : label(signal)}${rawText} · ${result.detail}`)
     if (previous && result.applied && result.game) apply(signal.type === 'segment' ? signal : 'next')
   }, [apply])
 
@@ -567,11 +564,12 @@ export const Example = () => {
       unsubscribe.current?.(); unsubscribe.current = null
       if (!await connector.current!.connect()) { setError('接続できませんでした。ボードの電源と接続状態をご確認ください。'); return }
       unsubscribe.current = await connector.current!.subscribe(receive)
-      setConnected(true)
+      setManual(false); setConnected(true)
     } catch (cause) { connector.current?.disconnect(); setConnected(false); setError(cause instanceof Error ? cause.message : '接続に失敗しました') }
     finally { setConnecting(false) }
   }
-  const disconnect = () => { unsubscribe.current?.(); unsubscribe.current = null; connector.current?.disconnect(); setConnected(false) }
+  useEffect(() => { if (!connected) setManual(true) }, [connected])
+  const disconnect = () => { unsubscribe.current?.(); unsubscribe.current = null; connector.current?.disconnect(); setConnected(false); setManual(true) }
   const selectMode = (next: Mode) => {
     setMode(next); setScreen('setup'); setError('')
     setCount(next === 'practice' || next === 'robo' ? 1 : 2)
@@ -596,25 +594,23 @@ export const Example = () => {
       <button className="wordmark" onClick={goHome}><span className="mark">D</span><span>DARTS<small>ROOM</small></span></button>
       <div className="board-status"><span className={`status-dot ${connected ? 'online' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected ? disconnect : connect}>{connecting ? '接続中…' : connected ? '切断' : 'Bluetooth接続'}</button></div>
     </header>
-    <AccountPanel game={game} seat={onlineSeat} />
     {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>閉じる</button></div>}
 
     {screen === 'home' && <>
-      <section className="welcome"><div><div className="kicker">HOME DARTS · LOCAL PLAY</div><h1>今日の一本を、<span>ここから。</span></h1><p>遊びたいゲームを選んで、スタート。</p></div><div className="welcome-orbit">D<span>●</span></div></section>
-      <section className="mode-section"><div className="section-heading"><div><span className="kicker">CHOOSE YOUR GAME</span><h2>GAME SELECT</h2></div><span className="local-tag">● LOCAL + ONLINE</span></div>
-        <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}
+      <section className="mode-section lobby"><div className="section-heading"><div><span className="kicker">DARTS ROOM / PLAY</span><h1>GAME SELECT</h1></div><p>ゲームを選んでスタート</p></div>
+        <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} disabled={onlineStatus === 'connecting' || onlineStatus === 'searching'} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}
           <button className="game-card online-card" onClick={() => onlineStatus === 'searching' ? findOnlineOpponent() : setOnlineSelectionOpen(open => !open)} disabled={onlineStatus === 'connecting'} aria-expanded={onlineSelectionOpen} aria-label={onlineStatus === 'searching' ? 'オンライン対戦をキャンセル' : 'オンライン対戦のゲームモードを選ぶ'}><span className="card-icon">◎</span><span className="card-arrow">{onlineStatus === 'searching' ? '×' : '↗'}</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を検索中 · タップでキャンセル' : onlineSelectionOpen ? 'ゲームモードを選択してください' : '01・CR・MATCH・RANDOM'}</small></span></button>
         </div>
         {onlineSelectionOpen && <div className="online-mode-panel">
-          <div className="online-mode-heading"><div><strong>オンライン対戦モード</strong><small>相手と同じモード、またはRANDOM同士でマッチします。</small></div></div>
+          <div className="online-mode-heading"><div><strong>オンライン対戦モード</strong><small>01・CR・MATCHは同じ種目の相手と対戦。RANDOMならどの種目でも対戦できます。</small></div></div>
           <div className="online-mode-options" role="group" aria-label="オンライン対戦モード">
             {([{ id: '01', title: '01', detail: 'ゼロワン' }, { id: 'cricket', title: 'CR', detail: 'クリケット' }, { id: 'match', title: 'MATCH', detail: 'メドレー' }, { id: 'random', title: 'RANDOM', detail: 'どのモードともマッチ' }] as const).map(option => <button key={option.id} className={onlineMode === option.id ? 'chosen' : ''} aria-pressed={onlineMode === option.id} disabled={onlineStatus === 'connecting' || onlineStatus === 'searching'} onClick={() => setOnlineMode(option.id)}><strong>{option.title}</strong><small>{option.detail}</small></button>)}
           </div>
           <button className="online-search-button" onClick={findOnlineOpponent} disabled={onlineStatus === 'connecting'}>{onlineStatus === 'searching' ? '検索をキャンセル' : onlineStatus === 'connecting' ? '接続中…' : '対戦相手を検索'} <span>→</span></button>
         </div>}
       </section>
-      <section className="home-note"><span>01</span><p>Bluetoothボードまたは画面入力に対応。</p><span>PLAY AT HOME</span></section>
     </>}
+    <div hidden={screen !== 'home' && !game?.finished}><AccountPanel game={game} seat={onlineSeat} /></div>
 
     {screen === 'setup' && <section className="setup-view">
       <button className="back-link" onClick={() => setScreen('home')}>← <span>ゲーム選択へ戻る</span></button>
@@ -626,7 +622,7 @@ export const Example = () => {
           {(mode === 'match' || mode === 'robo' && roboGameMode === 'match') && <><div className="setup-block"><h2>メドレー</h2><div className="segmented"><button className={matchBestOf===3?'chosen':''} onClick={() => setMatchBestOf(3)}>BEST OF 3 <small>01 · CR · CH</small></button><button className={matchBestOf===5?'chosen':''} onClick={() => setMatchBestOf(5)}>BEST OF 5 <small>01 · CR · CR · 01 · CH</small></button></div><p className="setup-hint">必要勝利数に先に達した時点で終了します。</p></div><div className="setup-block"><h2>2レグ目以降の先攻</h2><div className="segmented"><button className={matchLeadRule==='loser'?'chosen':''} onClick={() => setMatchLeadRule('loser')}>LOSER · 前レグの敗者</button><button className={matchLeadRule==='alternate'?'chosen':''} onClick={() => setMatchLeadRule('alternate')}>ALTERNATE · 交互</button></div></div></>}
           {mode !== 'robo' && <div className="setup-block"><h2>プレイヤー</h2><div className="segmented player-count">{(mode === 'match' ? [2] : [1,2,3,4]).map(n=><button className={count===n?'chosen':''} key={n} onClick={() => setCount(n)}>{n}<small>人</small></button>)}</div>{names.slice(0,count).map((name,i)=><label className="player-name" key={i}><span>P{i+1}</span><input aria-label={`プレイヤー${i+1}`} value={name} maxLength={20} onChange={e=>setNames(old=>old.map((v,j)=>i===j?e.target.value:v))}/></label>)}{mode==='cricket'&&count===1&&<p className="setup-hint">15〜20とBULLをすべてクローズすると終了します。ラウンド制限はありません。</p>}</div>}
           {mode === 'robo' && <div className="setup-block"><h2>CPUレベル</h2><div className="segmented">{(['EASY','NORMAL','HARD'] as const).map(level=><button className={difficulty===level?'chosen':''} key={level} onClick={()=>setDifficulty(level)}>{level}</button>)}</div></div>}
-          {<div className="setup-block"><h2>ブル</h2><div className="segmented"><button className={bull==='fat'?'chosen':''} onClick={()=>setBull('fat')}>FAT BULL · 50</button><button className={bull==='split'?'chosen':''} onClick={()=>setBull('split')}>SEPARATE · 25 / 50</button></div></div>}
+          {(mode !== 'cricket' && !(mode === 'robo' && roboGameMode === 'cricket')) && <div className="setup-block"><h2>ブル</h2><div className="segmented"><button className={bull==='fat'?'chosen':''} onClick={()=>setBull('fat')}>FAT BULL · 50</button><button className={bull==='split'?'chosen':''} onClick={()=>setBull('split')}>SEPARATE · 25 / 50</button></div></div>}
         </>}
         {mode === 'match' && count<2 && <p className="setup-hint">MATCHは2人以上でプレイします。</p>}
         <button className="primary-button" disabled={mode==='match'&&count<2} onClick={start}>{mode==='practice'?'練習をはじめる':'ゲームをはじめる'} <span>→</span></button>
@@ -645,7 +641,7 @@ export const Example = () => {
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
       {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{isRoboGame(game) && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits} / ${p.darts}` : p.score : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? game.practiceMode === 'target' || game.practiceMode === 'eagles-eye' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `AVG ${p.darts ? (p.points / p.darts).toFixed(1) : '—'} / DART` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
-      {game.finished ? <><GameResults game={game}/><div className="finish-card"><button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div></> : <div className="play-layout">
+      {game.finished ? <><GameResults game={game}/><div className="finish-card">{onlineStatus !== 'matched' && <button className="primary-button" onClick={() => { if (isRoboGame(game)) setMode('robo'); gameRef.current = null; setGame(null); setHistory([]); setScreen('setup') }}>同じ設定でもう一度 <span>↻</span></button>}<button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div></> : <div className="play-layout">
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${(mode === 'robo' || isRoboGame(game)) && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits}` : activePlayer?.score : activePlayer?.score}</div>
@@ -654,12 +650,12 @@ export const Example = () => {
             <div className="throw-message" aria-live="polite">{game.message}</div>
             <div className="dart-slots">{(mode === 'match' && game.match!.stage === 'cork' ? [0, 1] : [0, 1, 2]).map(i => <div key={i}><small>{mode === 'match' && game.match!.stage === 'cork' ? `CORK · ${game.players[i].name}` : `DART ${i + 1}`}</small><b>{mode === 'match' && game.match!.stage === 'cork' ? game.match!.corkThrows[i] ? label(game.match!.corkThrows[i]) : '—' : game.throws[i] ? label(game.throws[i]) : '—'}</b></div>)}</div>
             {mode === 'match' && game.match!.stage === 'cork' ? isRoboGame(game) && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : <div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div> : game.bust || game.throws.length === 3 ? <p className="auto-change-message" aria-live="polite">{game.bust ? 'BUST · 次のプレイヤーへ' : '3本投げ終わり · 次のプレイヤーへ'}</p> : (!isRoboGame(game) || game.active === 0) ? <><button className="primary-button next-turn" disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => apply('next')}>ターンを終了 <span>→</span></button><div className="play-controls">{onlineStatus !== 'matched' && <button onClick={undo} disabled={!history.length}>↶ 取り消す</button>}<button onClick={() => apply({ base: 0, ratio: 1 })} disabled={game.throws.length >= 3 || game.bust || onlineStatus === 'matched' && game.active !== onlineSeat}>MISS</button><label><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />ボードを画面入力</label></div></> : isRoboGame(game) && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : null}
-            <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>{lastInput && <p className="last-hit">{lastInput}</p>}
+            <p className="board-hint">{mode === 'match' && game.match!.stage === 'cork' ? '1本ずつ中心を狙います。エリアが同じ場合は近い方を選択。' : connected ? 'Bluetoothボードの命中を待っています' : 'Bluetooth接続または画面のボード入力でプレイ'}</p>
           </>}
         </div>
         <div className="board-wrap">{(mode === 'cricket' || (mode === 'match' || mode === 'robo') && game.legMode === 'cricket') && <table className="cricket-score"><thead><tr><th>NUMBER</th>{game.players.map((p, i) => <th key={i}>{p.name}</th>)}</tr></thead><tbody>{targets.map(t => <tr key={t}><th>{t === 25 ? 'BULL' : t}</th>{game.players.map((p, i) => <td className={(p.marks[t] || 0) >= 3 ? 'closed' : ''} key={i}>{['·', '/', '×', '⊗'][Math.min(3, p.marks[t] || 0)]}</td>)}</tr>)}</tbody></table>}<div className="board-title"><span>{mode === 'match' && game.match!.stage === 'choice' ? onlineStatus === 'matched' ? 'COIN TOSS / CHOICE' : 'CORK / CHOICE' : mode === 'match' && game.match!.stage !== 'playing' ? 'CORK / CHOICE' : 'BOARD'}</span>{manual && <small>クリックで入力</small>}</div><Board onHit={hit => apply(hit)} disabled={!manual || (mode === 'robo' || isRoboGame(game)) && game.active === 1 || onlineStatus === 'matched' && game.active !== onlineSeat || game.throws.length >= 3 || game.bust || mode === 'match' && (game.match!.stage === 'choice' || game.match!.stage === 'cork-tie')} activeTarget={mode === 'practice' ? practiceBoardTarget(game) : undefined} darts={mode === 'match' && game.match?.stage === 'cork' ? game.match.corkThrows : game.throws}/></div>
       </div>}
     </section>}
-    <footer className="app-footer"><span>DARTS ROOM</span><a href="/privacy" target="_blank" rel="noreferrer">プライバシー</a><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'LOCAL PLAY · OFFLINE'}</span></footer>
+    <footer className="app-footer"><span>DARTS ROOM</span><a href="/privacy" target="_blank" rel="noreferrer">プライバシー</a><span>{onlineStatus === 'matched' ? 'ONLINE MATCH' : 'HOME BOARD COMPANION'}</span></footer>
   </main>
 }
