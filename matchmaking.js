@@ -23,6 +23,44 @@ export function attachMatchmaking(io) {
   async function getIceServers() {
     const directConfig = parseIceServers(process.env.WEBRTC_ICE_SERVERS)
     if (directConfig) return { iceServers: directConfig }
+
+    // Cloudflare TURN keys stay on the match server. Only the short-lived ICE
+    // credentials returned by Cloudflare are sent to browsers.
+    const turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID
+    const turnKeyToken = process.env.CLOUDFLARE_TURN_KEY_TOKEN
+    if (turnKeyId && turnKeyToken) {
+      if (!/^[a-zA-Z0-9_-]{16,64}$/.test(turnKeyId) || turnKeyToken.length > 256) {
+        console.error('Cloudflare TURN credentials are configured with an invalid key ID or token')
+        return { iceServers: defaultIceServers }
+      }
+      if (cachedIceServers && Date.now() < cachedIceServersUntil) return { iceServers: cachedIceServers }
+      if (!iceServersRequest) {
+        iceServersRequest = (async () => {
+          const requestedTtl = Number(process.env.CLOUDFLARE_TURN_CREDENTIAL_TTL_SECONDS || 10800)
+          const ttl = Number.isInteger(requestedTtl) ? Math.max(300, Math.min(172800, requestedTtl)) : 10800
+          const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(turnKeyId)}/credentials/generate-ice-servers`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${turnKeyToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ ttl }),
+            signal: AbortSignal.timeout(5000)
+          })
+          if (!response.ok) throw new Error(`Cloudflare TURN credential request returned ${response.status}`)
+          const parsed = parseIceServers((await response.json())?.iceServers)
+          if (!parsed?.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => /^(turn|turns):/i.test(url)))) {
+            throw new Error('Cloudflare TURN response did not contain a TURN server')
+          }
+          cachedIceServers = parsed
+          cachedIceServersUntil = Date.now() + 60_000
+          return parsed
+        })().catch(error => {
+          console.error(`Cloudflare TURN credentials unavailable: ${error.message}`)
+          return null
+        }).finally(() => { iceServersRequest = null })
+      }
+      const cloudflareIceServers = await iceServersRequest
+      if (cloudflareIceServers) return { iceServers: cloudflareIceServers }
+    }
+
     const endpoint = process.env.WEBRTC_TURN_CREDENTIALS_URL
     if (!endpoint) return { iceServers: defaultIceServers }
     try { if (new URL(endpoint).protocol !== 'https:') return { iceServers: defaultIceServers } } catch { return { iceServers: defaultIceServers } }

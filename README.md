@@ -26,6 +26,16 @@ http://localhost:3000 をChrome / Edgeで開き、ボードの電源を入れて
 
 Render用の `render.yaml` は、WebアプリとSocket.IOサーバーを1つのサービスとして公開します。GitHubへこのソースをpushし、Renderで **New → Blueprint** からリポジトリを選ぶと作成できます。公開後の `/health` は `hello` を返します。UptimeRobotのHTTP(s)監視先を `https://<RenderのURL>/health` にすれば定期応答を確認できます。無料インスタンスは再起動や利用上限の影響を受けるため、常時稼働の保証ではありません。
 
+### Cloudflare TURN（オンライン対戦カメラ）
+
+TURN中継を使う場合は、Cloudflare Realtime TURNのキーを作り、Renderのマッチサーバーに次の環境変数を設定します。
+
+- `CLOUDFLARE_TURN_KEY_ID`: TURNキーID
+- `CLOUDFLARE_TURN_KEY_TOKEN`: TURNキーのシークレット。ブラウザーには渡さず、Renderのサーバー環境変数だけに保存します。
+- `CLOUDFLARE_TURN_CREDENTIAL_TTL_SECONDS`: 一時認証情報の有効秒数（任意、初期値10800秒、300〜172800秒）
+
+サーバーはCloudflareから一時ICE認証情報を取得して対戦中のクライアントへ返します。TURNキーの値を `WEBRTC_ICE_SERVERS` に直接入れないでください。キーが未設定、または一時認証情報を取得できない場合はSTUN接続へフォールバックします。
+
 - 01：301 / 501 / 701 / 901 / 1101 / 1501。15ラウンド制で、MASTER OUT / DOUBLE OUT を選択できます。
 - CRICKET：15〜20・BULLを使うローカル対戦。2〜4人でプレイできます。
 - PRACTICE：狙うナンバーを選び、命中回数と命中率を記録する練習モード。
