@@ -169,6 +169,17 @@ export const Example = () => {
   const [error, setError] = useState('')
   const [count, setCount] = useState(2)
   const [names, setNames] = useState(['PLAYER 1', 'PLAYER 2', 'PLAYER 3', 'PLAYER 4'])
+  const [googleDisplayName, setGoogleDisplayName] = useState<string | null>(null)
+  const handleGoogleDisplayName = useCallback((nextName: string | null) => {
+    setNames(currentNames => {
+      const currentPlayerName = currentNames[0]
+      if (currentPlayerName === 'PLAYER 1' || currentPlayerName === googleDisplayName) {
+        return [nextName || 'PLAYER 1', ...currentNames.slice(1)]
+      }
+      return currentNames
+    })
+    setGoogleDisplayName(nextName)
+  }, [googleDisplayName])
   const [initial, setInitial] = useState(501)
   const [outRule, setOutRule] = useState<OutRule>('master')
   const [matchBestOf, setMatchBestOf] = useState<3 | 5>(3)
@@ -610,7 +621,7 @@ export const Example = () => {
         </div>}
       </section>
     </>}
-    <div hidden={screen !== 'home' && !game?.finished}><AccountPanel game={game} seat={onlineSeat} /></div>
+    <div hidden={screen !== 'home' && !game?.finished}><AccountPanel game={game} seat={onlineSeat} onDisplayName={handleGoogleDisplayName} /></div>
 
     {screen === 'setup' && <section className="setup-view">
       <button className="back-link" onClick={() => setScreen('home')}>← <span>ゲーム選択へ戻る</span></button>

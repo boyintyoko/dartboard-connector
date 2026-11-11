@@ -7,7 +7,7 @@ import { summarizeRating, type SavedResult } from '../lib/rating'
 
 type PendingResult = SavedResult & { user_id: string }
 
-export function AccountPanel({ game, seat }: { game: Game | null; seat: number | null }) {
+export function AccountPanel({ game, seat, onDisplayName }: { game: Game | null; seat: number | null; onDisplayName: (name: string | null) => void }) {
   const [client, setClient] = useState<SupabaseClient | null>(null)
   const [ready, setReady] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
@@ -42,6 +42,10 @@ export function AccountPanel({ game, seat }: { game: Game | null; seat: number |
     const { data } = client.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); setReady(true) })
     return () => data.subscription.unsubscribe()
   }, [client])
+  useEffect(() => {
+    const name = user?.user_metadata.full_name || user?.user_metadata.name || null
+    onDisplayName(typeof name === 'string' && name.trim() ? name.trim().slice(0, 20) : null)
+  }, [user?.id, user?.user_metadata.full_name, user?.user_metadata.name, onDisplayName])
   useEffect(() => {
     if (game && !owners.current.has(game.id)) owners.current.set(game.id, { userId: ready ? user?.id ?? null : null, seat: seat ?? 0 })
   }, [game, ready, user?.id, seat])
