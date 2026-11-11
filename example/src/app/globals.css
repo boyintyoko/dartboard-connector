@@ -84,5 +84,9 @@
   .play-layout{gap:5px}
   .main-score{font-size:clamp(42px,12vw,72px)}
   .board-wrap{max-width:calc(100svh - 110px)}
-  .match-video-panel{display:none}
+  .match-video-panel{display:grid;grid-template-columns:1fr auto;padding:3px;gap:3px}
+  .match-video-feeds{gap:3px}
+  .match-video-frame{min-height:34px;max-height:54px;font-size:7px}
+  .match-video-frame>small{left:3px;bottom:2px;font-size:7px;padding:1px 3px}
+  .match-video-controls button{min-height:28px;padding:0 6px;font-size:8px}
 }
