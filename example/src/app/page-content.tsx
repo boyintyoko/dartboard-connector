@@ -367,7 +367,7 @@ export const Example = () => {
     let resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
-    const completedOnlineTurn = onlineStatus === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
+    const completedOnlineTurn = onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
     if (completedOnlineTurn && !resolved.finished) {
       const award = resolved.award
       resolved = { ...nextTurn(resolved), award }
