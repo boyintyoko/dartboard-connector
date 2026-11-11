@@ -158,6 +158,7 @@ export const Example = () => {
   const onlineSeatRef = useRef<number | null>(null)
   const peerConnection = useRef<RTCPeerConnection | null>(null)
   const peerConnectionPending = useRef<Promise<RTCPeerConnection> | null>(null)
+  const videoOfferRetry = useRef<number | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([])
   const localVideo = useRef<HTMLVideoElement | null>(null)
@@ -276,7 +277,25 @@ export const Example = () => {
     await peer.setLocalDescription(offer)
     onlineSocket.current?.emit('match:signal', { type: 'offer', description: peer.localDescription?.toJSON() || offer })
   }
+  const requestVideoOffer = () => {
+    if (onlineSeatRef.current !== 0 || videoOfferRetry.current !== null) return
+    let attempts = 0
+    const retry = () => {
+      videoOfferRetry.current = null
+      const peer = peerConnection.current
+      if (!peer || peer.connectionState === 'closed') return
+      if (peer.signalingState !== 'stable') {
+        if (++attempts < 20) videoOfferRetry.current = window.setTimeout(retry, 250)
+        else setCameraError('映像の再接続に失敗しました。もう一度カメラをオンにしてください。')
+        return
+      }
+      void makeVideoOffer().catch(cause => setCameraError(cause instanceof Error ? `映像の再接続に失敗しました: ${cause.message}` : '映像の再接続に失敗しました。'))
+    }
+    videoOfferRetry.current = window.setTimeout(retry, 100)
+  }
   const closeVideo = () => {
+    if (videoOfferRetry.current !== null) window.clearTimeout(videoOfferRetry.current)
+    videoOfferRetry.current = null
     localStreamRef.current?.getTracks().forEach(track => track.stop())
     localStreamRef.current = null
     peerConnection.current?.close()
@@ -310,6 +329,8 @@ export const Example = () => {
       else peer.addTrack(track, stream)
       localStreamRef.current = stream
       setLocalStream(stream)
+      if (onlineSeatRef.current === 0) requestVideoOffer()
+      else onlineSocket.current?.emit('match:action', { type: 'video-offer' })
     } catch (cause) {
       const reason = cause instanceof Error ? `${cause.name} ${cause.message}` : ''
       if (/permission|denied|dismissed|notallowed/i.test(reason)) {
@@ -479,7 +500,11 @@ export const Example = () => {
     socket.on('match:state', (next: Game) => {
       if (onlineSeatRef.current !== 0) { gameRef.current = next; setGame(next) }
     })
-    socket.on('match:action', (request: { type: 'throw' | 'decision'; action?: Hit | { type: 'next' }; decision?: 'first' | 'choose' | 'select-game' | 'cork-winner'; value?: 'first' | 'game' | '01' | 'cricket' | number; seat: number }) => {
+    socket.on('match:action', (request: { type: 'throw' | 'decision' | 'video-offer'; action?: Hit | { type: 'next' }; decision?: 'first' | 'choose' | 'select-game' | 'cork-winner'; value?: 'first' | 'game' | '01' | 'cricket' | number; seat: number }) => {
+      if (request.type === 'video-offer') {
+        requestVideoOffer()
+        return
+      }
       const previous = gameRef.current
       if (!previous || previous.finished || previous.active !== request.seat || awardPlayingRef.current) return
       let next: Game
@@ -653,7 +678,7 @@ export const Example = () => {
           <div className="match-video-feed"><div className="match-video-frame">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>あなたのカメラはオフです</span>}<small>YOU</small></div></div>
           <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{videoConnectionState === 'failed' ? '映像接続に失敗しました · 別のネットワークをお試しください' : videoConnectionState !== 'connected' ? '相手と映像を接続中…' : remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
         </div>
-        <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN中継を利用できます' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
+        <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN設定あり · 接続経路は未確認' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
       {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{isRoboGame(game) && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits} / ${p.darts}` : p.score : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? game.practiceMode === 'target' || game.practiceMode === 'eagles-eye' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `AVG ${p.darts ? (p.points / p.darts).toFixed(1) : '—'} / DART` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
