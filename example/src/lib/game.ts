@@ -98,7 +98,7 @@ function recordResult(game: Game, winner: number | null): Game {
   if (game.ratingResults.some(result => result.id === id)) return game
   const mode = isX01Game(game) ? '01' : 'cricket'
   const stats = (game.statsFrozen ?? game.statsTotals).map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
-  const eligible = game.players.length >= 2 && game.mode !== 'robo' && !game.players.some(p => p.name.startsWith('ROBO ·')) && (mode !== '01' || game.bull === 'fat') && game.statsTotals.every(p => p.rounds > 0)
+  const eligible = game.players.length >= 2 && (mode !== '01' || game.bull === 'fat') && game.statsTotals.every(p => p.rounds > 0)
   return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, winner, eligible }] }
 }
 function trackStats(before: Game, after: Game, hit: Hit): Game {

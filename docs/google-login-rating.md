@@ -10,7 +10,7 @@ Enable Google in Supabase Auth. Google Cloud needs an OAuth Web client with call
 
 ## Statistics
 
-Each completed eligible leg has a stable UUID plus leg index. Insertions ignore duplicate IDs. Failed uploads are queued in this browser under the signed-in user ID and retried explicitly; navigating home does not cancel the queue. The account active at game creation owns the local P1 result, or the player's assigned online seat. Guest games, CPU opponents, solo games, practice and split-bull 01 do not affect rating. An unfinished game has no completed record. Undo cannot cross a completed leg boundary.
+Each completed eligible leg has a stable UUID plus leg index. Insertions ignore duplicate IDs. Failed uploads are queued in this browser under the signed-in user ID and retried explicitly; navigating home does not cancel the queue. The account active at game creation owns the local P1 result, or the player's assigned online seat. Guest games, solo games, practice and split-bull 01 do not affect rating. Signed-in player results from ROBO MATCH count in the matching 01 or Cricket category. An unfinished game has no completed record. Undo cannot cross a completed leg boundary.
 
 Statistics count whole player visits. 01 freezes the current and preceding players' accumulated visit averages at the end of the visit when any player reaches 20% or less of the initial score. Cricket freezes when any player has closed six numbers. Later players' unplayed visits are excluded. Misses count, invalid/closed cricket areas don't add marks, bust points are removed. Match legs reset counters while preserving completed results.
 
