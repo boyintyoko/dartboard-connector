@@ -256,7 +256,13 @@ export const Example = () => {
         else if (peer.connectionState === 'connecting' || peer.connectionState === 'disconnected') setVideoConnectionState('connecting')
         else if (peer.connectionState === 'closed') setVideoConnectionState('idle')
       }
-      peer.onicecandidateerror = event => setCameraError(`映像ネットワーク候補を取得できませんでした (ICE ${event.errorCode})`)
+      peer.onicecandidateerror = event => {
+        // ICE 701 is reported per server URL when that one endpoint cannot be
+        // reached. Other TURN URLs may still work, so only the peer connection
+        // state should decide whether the whole video connection failed.
+        if (event.errorCode === 701) return
+        setCameraError(`映像サーバーからエラーが返りました (ICE ${event.errorCode}${event.url ? ` · ${event.url}` : ''})`)
+      }
       peer.ontrack = event => {
         const stream = event.streams[0] || new MediaStream([event.track])
         setRemoteStream(stream)
