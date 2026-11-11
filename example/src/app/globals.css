@@ -31,3 +31,58 @@
 .lobby .game-card:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
 .finish-card{display:flex;flex-wrap:wrap;gap:10px}.finish-card button{flex:1 1 190px}
 @media(max-width:600px){.lobby .section-heading p{font-size:10px}.lobby .game-card{min-height:128px}.app-footer{flex-wrap:wrap;gap:10px}}
+
+/* Keep the active game and its controls inside short phone viewports. */
+@media(max-width:760px) and (max-height:900px){
+  .app-shell{width:calc(100% - 24px);min-height:100svh}
+  .topbar{height:52px;min-height:52px}
+  .game-view{padding:8px 0 4px;min-height:0;display:flex;flex-direction:column}
+  .game-toolbar{padding-bottom:6px;gap:8px;min-height:30px}
+  .game-toolbar .back-link{padding:4px 0;font-size:10px}
+  .game-round{font-size:9px}
+  .score-strip{padding:6px 0;gap:4px;grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+  .score-card{padding:5px 7px;gap:2px}
+  .score-card>b{font-size:22px}
+  .score-card>small{font-size:7px}
+  .play-layout{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding-top:4px}
+  .turn-panel{min-width:0}
+  .main-score{font-size:clamp(48px,14vw,92px);letter-spacing:-2px}
+  .throw-message{height:20px;font-size:12px}
+  .dart-slots{gap:3px;margin:4px 0}
+  .dart-slots>div{padding:5px 1px}
+  .dart-slots small{font-size:7px}
+  .dart-slots b{font-size:15px;margin-top:2px}
+  .next-turn{min-height:38px;padding:8px 28px 8px 8px;margin-top:5px;font-size:11px}
+  .play-controls{gap:3px;margin-top:4px}
+  .play-controls button,.play-controls label{min-height:30px;padding:3px;font-size:8px}
+  .play-controls input{margin:0}
+  .board-wrap{width:100%;max-width:none;min-width:0;padding:6px}
+  .board{margin:3px auto 0}
+  .board-title{font-size:8px}
+  .cricket-score{margin-bottom:4px}
+  .cricket-score th,.cricket-score td{padding:2px;font-size:10px}
+  .cricket-score td{font-size:14px}
+  .board-hint{display:none}
+  .app-footer{display:none}
+  .account-panel{margin:5px 0;padding:6px 8px;gap:4px}
+  .account-identity{grid-column:auto;gap:5px}
+  .account-identity .kicker,.account-rating>small:last-child,.account-method,.rating-method,.account-stats{display:none}
+  .account-identity strong{font-size:9px}
+  .account-panel button{padding:4px 6px;font-size:8px}
+  .account-rating>strong{font-size:18px}
+  .account-rating>small{font-size:8px}
+  .match-video-panel{padding:5px;margin-top:5px;gap:5px;grid-template-columns:1fr auto}
+  .match-video-frame{min-height:45px}
+  .match-video-controls{display:flex;gap:4px}
+  .match-video-controls small{display:none}
+}
+@media(max-width:760px) and (max-height:600px){
+  .topbar{height:42px;min-height:42px}
+  .score-strip{padding:3px 0}
+  .score-card{padding:3px 6px}
+  .score-card>b{font-size:19px}
+  .play-layout{gap:5px}
+  .main-score{font-size:clamp(42px,12vw,72px)}
+  .board-wrap{max-width:calc(100svh - 110px)}
+  .match-video-panel{display:none}
+}
