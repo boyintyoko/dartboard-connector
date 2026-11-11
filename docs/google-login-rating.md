@@ -24,8 +24,10 @@ Project: `darts-room` (`qvtscshjtxvidnpfssuj`), Tokyo, in `boyintyoko's Org`. Cr
 
 Verified with two temporary test users inside a rolled-back transaction: own insert/read, duplicate-ignore inserts, other-user read denial, other-user insert denial, anonymous read denial. All passed. Security advisors returned no findings. Test data was rolled back.
 
-Google is not enabled yet. Google Cloud Client ID/Secret and Supabase Site URL/redirects still need dashboard setup. The application checks provider readiness and keeps the login button disabled until the provider is enabled.
+Google sign-in is enabled. Google Cloud project `darts-room` has an external OAuth application in production and a dedicated Web client. The authorized origin is `https://darts-room-match.onrender.com`; the callback is `https://qvtscshjtxvidnpfssuj.supabase.co/auth/v1/callback`. The client secret is saved only in Supabase Auth. Site URL and the exact root redirect are configured for the public app. Branding links to the public home page and `/privacy`. Only email and basic profile scopes are requested. The application checks provider readiness before enabling login.
 
-## Verification pending Google setup
+## Verification
 
-Test real Google sign-in and callback, logout, result persistence, repeat insertion, user A/user B isolation and anonymous denial against the selected project. Database policies and security advisors have passed. Real Google sign-in and cross-device persistence require the Google provider setup above.
+On 2026-11-11, real Google sign-in returned to the public app and displayed the signed-in profile with the rating measurement counter. Reload preserved the session; logout returned to guest; signing in again succeeded. The deployed `/api/auth-config` reported configured=true, googleEnabled=true and providerCheckFailed=false. The privacy-page deployment is live.
+
+Database insert/read, duplicate handling, user isolation and anonymous denial were verified separately with rolled-back test data as described above. A completed real game and cross-device synchronization have not been exercised end to end; no fabricated game results were added to the account.
