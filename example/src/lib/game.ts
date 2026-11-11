@@ -77,20 +77,19 @@ export function roboAim(game: Game): Hit {
   if (cricket) {
     const opponent = game.players.find((_, index) => index !== game.active)
     if (!opponent) return { base: 20, ratio: 3 }
-    const openTargets = targets.filter(target => (player.marks[target] || 0) < 3)
-    const threats = openTargets.filter(target => (opponent.marks[target] || 0) < 3)
-    const canScore = openTargets.filter(target => (opponent.marks[target] || 0) >= 3)
-    if (threats.length && player.score >= opponent.score) {
-      const target = threats[0]
+    const ownOpen = targets.filter(target => (player.marks[target] || 0) < 3)
+    const opponentOpen = ownOpen.filter(target => (opponent.marks[target] || 0) < 3)
+    const scoringTargets = targets.filter(target => (player.marks[target] || 0) >= 3 && (opponent.marks[target] || 0) < 3)
+    const isBehind = player.score < opponent.score
+    if (isBehind && scoringTargets.length) {
+      return { base: scoringTargets[0], ratio: 3 }
+    }
+    if (opponentOpen.length) {
+      const target = opponentOpen[0]
       return { base: target, ratio: Math.min(3, 3 - (player.marks[target] || 0)) }
     }
-    if (canScore.length) {
-      const target = canScore[0]
-      return { base: target, ratio: 3 }
-    }
-    if (threats.length) {
-      const target = threats[0]
-      return { base: target, ratio: Math.min(3, 3 - (player.marks[target] || 0)) }
+    if (scoringTargets.length) {
+      return { base: scoringTargets[0], ratio: 3 }
     }
     return { base: 20, ratio: 3 }
   }
