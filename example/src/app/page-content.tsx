@@ -688,10 +688,10 @@ export const Example = () => {
     {screen === 'game' && onlineStatus === 'matched' && !game && <section className="game-view online-waiting"><span className="kicker">RANDOM MATCH</span><h1>対戦相手と接続中</h1><p>ゲーム情報を同期しています…</p></section>}
     {screen === 'game' && game && <section className="game-view">
       <div className="game-toolbar"><button className="back-link" onClick={goHome}>← ホーム</button><div className="game-label"><span className={`mini-dot ${modeInfo.accent}`} />{mode === 'practice' ? practiceModeTitle[game.practiceMode] : modeInfo.title}{onlineStatus === 'matched' ? ' · ONLINE' : isRoboGame(game) || mode === 'robo' ? ' · CPU対戦' : ''}</div><div className="game-round">{mode === 'practice' ? game.practiceMode === 'target' ? 'FREE PRACTICE' : `ROUND ${game.round} / ${game.limit}` : mode === 'match' ? `LEG ${game.match!.legIndex + 1} / ${game.match!.bestOf} · ${game.match!.legWins[0]} - ${game.match!.legWins[1]}` : `ROUND ${game.round}${game.limit ? ` / ${game.limit}` : ''}`}</div></div>
-      {onlineStatus === 'matched' && <div className={`match-video-panel ${game.legMode === 'cricket' ? 'cricket-video-panel' : 'x01-video-panel'}`}>
-        <div className="match-video-stage">
-          <div className="match-video-frame match-video-opponent">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{videoConnectionState === 'failed' ? '映像接続に失敗しました · 別のネットワークをお試しください' : videoConnectionState !== 'connected' ? '相手と映像を接続中…' : remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div>
-          <div className="match-video-frame match-video-self">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>カメラOFF</span>}<small>YOU</small></div>
+      {onlineStatus === 'matched' && <div className="match-video-panel">
+        <div className="match-video-feeds">
+          <div className="match-video-feed"><div className="match-video-frame">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>あなたのカメラはオフです</span>}<small>YOU</small></div></div>
+          <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{videoConnectionState === 'failed' ? '映像接続に失敗しました · 別のネットワークをお試しください' : videoConnectionState !== 'connected' ? '相手と映像を接続中…' : remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
         </div>
         <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN設定あり · 接続経路は未確認' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
