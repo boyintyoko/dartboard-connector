@@ -555,7 +555,7 @@ export const Example = () => {
     return () => window.clearTimeout(timer)
   }, [game, difficulty, commitGame, awardPlaying])
   useEffect(() => {
-    if (awardPlaying || !game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
+    if (awardPlaying && onlineStatus !== 'matched' || !game || game.finished || game.mode === 'match' && game.match?.stage !== 'playing') return
     if (onlineStatus === 'matched' && onlineSeat !== 0) return
     if ((!game.bust && game.throws.length !== 3) || autoChangedTurn.current === game) return
     const completedTurn = game
@@ -563,7 +563,8 @@ export const Example = () => {
       const current = gameRef.current
       if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
       autoChangedTurn.current = completedTurn
-      commitGame(current, nextTurn(current))
+      const changed = nextTurn(current)
+      commitGame(current, current.award && onlineStatus === 'matched' ? { ...changed, award: current.award } : changed)
     }, game.award ? 180 : isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
     return () => window.clearTimeout(timer)
   }, [game, onlineStatus, onlineSeat, commitGame, awardPlaying])
