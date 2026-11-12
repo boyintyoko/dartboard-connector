@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { cp, mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,7 +47,10 @@ const serverFile = await findServer(appOutput)
 if (!serverFile) throw new Error(`Next standalone server.js was not found under ${appOutput}`)
 
 const serverDir = path.dirname(serverFile)
-await cp(path.join(example, 'public'), path.join(serverDir, 'public'), { recursive: true, force: true })
+const publicDir = path.join(example, 'public')
+if (existsSync(publicDir)) {
+  await cp(publicDir, path.join(serverDir, 'public'), { recursive: true, force: true })
+}
 await mkdir(path.join(serverDir, '.next'), { recursive: true })
 await cp(path.join(example, '.next', 'static'), path.join(serverDir, '.next', 'static'), { recursive: true, force: true })
 
