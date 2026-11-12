@@ -1,6 +1,6 @@
 # Darts Room for Windows
 
-The Windows build runs the game UI from a local Next.js server bundled with Electron. It opens fullscreen and bundles the Barlow Condensed font so the game screen can load without an internet connection.
+The Windows build runs the game UI from a local Next.js server bundled with Electron. It opens in fullscreen kiosk mode, stays above ordinary windows, and bundles the Barlow Condensed font so the game screen can load without an internet connection.
 
 ## Build
 
@@ -21,4 +21,4 @@ Local games, practice, the on-screen board, and Bluetooth board input run locall
 
 The first Bluetooth connection may show a Windows Bluetooth permission or pairing prompt. Allow Darts Room to use Bluetooth and select the dartboard in the device picker.
 
-Use `F11` or `Alt+Enter` to toggle fullscreen. Press `Alt+F4` to close the app.
+Press `Alt+F4` to close the app. Windows-level shortcuts such as `Alt+Tab` are controlled by Windows; use Windows kiosk configuration if the device must be locked to this app.

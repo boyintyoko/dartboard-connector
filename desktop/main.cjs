@@ -189,6 +189,8 @@ async function createWindow() {
     backgroundColor: '#080c12',
     autoHideMenuBar: true,
     show: false,
+    kiosk: true,
+    alwaysOnTop: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -197,14 +199,8 @@ async function createWindow() {
   })
   mainWindow.removeMenu()
   installBluetoothPicker(mainWindow.webContents)
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'F11' || (input.alt && input.key === 'Enter'))) {
-      mainWindow.setFullScreen(!mainWindow.isFullScreen())
-      event.preventDefault()
-    }
-  })
   mainWindow.once('ready-to-show', () => {
-    mainWindow.setFullScreen(true)
+    mainWindow.setAlwaysOnTop(true)
     mainWindow.show()
   })
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
