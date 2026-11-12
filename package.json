@@ -17,7 +17,7 @@
     "start-match-server": "node online-server.js",
     "desktop:build": "node desktop/build.mjs",
     "desktop:run": "npm run desktop:build && electron .",
-    "desktop:dist:win": "npm run desktop:build && electron-builder --win nsis --x64",
+    "desktop:dist:win": "npm run desktop:build && electron-builder --win nsis --x64 --publish never",
     "ci": "yarn workspaces run ci",
     "test:game": "node tests/game-check.mjs",
     "test:matchmaking": "node tests/matchmaking-check.mjs",
@@ -28,7 +28,10 @@
   "build": {
     "appId": "com.dartsroom.desktop",
     "productName": "Darts Room",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "desktop/app/**/*"
+    ],
     "directories": {
       "output": "dist/windows"
     },

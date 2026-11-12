@@ -9,7 +9,10 @@ let mainWindow
 let appUrl
 
 function findServerFile() {
-  const root = path.join(app.getAppPath(), 'desktop', 'app')
+  const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'app')
+  const root = fs.existsSync(unpackedRoot)
+    ? unpackedRoot
+    : path.join(app.getAppPath(), 'desktop', 'app')
   const candidates = [path.join(root, 'server.js'), path.join(root, 'example', 'server.js')]
   return candidates.find((candidate) => fs.existsSync(candidate))
 }
