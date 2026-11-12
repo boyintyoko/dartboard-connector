@@ -1,4 +1,9 @@
 import "./globals.css"
+import "@fontsource/barlow-condensed/latin-400.css"
+import "@fontsource/barlow-condensed/latin-500.css"
+import "@fontsource/barlow-condensed/latin-600.css"
+import "@fontsource/barlow-condensed/latin-700.css"
+import "@fontsource/barlow-condensed/latin-800.css"
 
 export const metadata = {
   title: "Darts Room — Home Board Companion",
