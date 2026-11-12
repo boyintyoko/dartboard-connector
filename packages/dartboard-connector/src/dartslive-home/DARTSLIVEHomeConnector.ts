@@ -13,20 +13,45 @@ const hasValue = (target: unknown): target is EventTarget & { value: DataView } 
 
 export class DARTSLIVEHomeConnector implements DartsboardBluetoothConnector<Signal> {
   private _server: BluetoothRemoteGATTServer | null = null
+  private _device: BluetoothDevice | null = null
 
   async connect() {
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [uuid] }],
-      })
-      const { gatt } = device
-      if (gatt == null) {
-        return false
-      }
-      this._server = await gatt.connect()
-
-      return true
+      if (await this.reconnectAuthorized()) return true
+      const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [uuid] }] })
+      return await this.connectDevice(device)
     } catch (_error) {
+      return false
+    }
+  }
+
+  async hasAuthorizedDevice() {
+    return (await this.authorizedDevice()) !== null
+  }
+
+  async reconnectAuthorized() {
+    const device = await this.authorizedDevice()
+    return device ? this.connectDevice(device) : false
+  }
+
+  private async authorizedDevice() {
+    const devices = await this.authorizedDevices()
+    return devices.find((candidate) => /dartslive/i.test(candidate.name ?? "")) ?? (devices.length === 1 ? devices[0] : null)
+  }
+
+  private async authorizedDevices() {
+    const bluetooth = navigator.bluetooth as Bluetooth & { getDevices?: () => Promise<BluetoothDevice[]> }
+    return typeof bluetooth.getDevices === "function" ? bluetooth.getDevices() : []
+  }
+
+  private async connectDevice(device: BluetoothDevice) {
+    try {
+      if (!device.gatt) return false
+      this._device = device
+      this._server = await device.gatt.connect()
+      return true
+    } catch {
+      this._server = null
       return false
     }
   }
@@ -34,6 +59,7 @@ export class DARTSLIVEHomeConnector implements DartsboardBluetoothConnector<Sign
   disconnect() {
     this._server?.disconnect()
     this._server = null
+    this._device = null
   }
 
   get isConnected() {

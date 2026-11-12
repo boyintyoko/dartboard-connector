@@ -155,6 +155,8 @@ function Board({ onHit, disabled, darts = [], activeTarget, cricketMarks }: { on
 export const Example = () => {
   const connector = useRef<DARTSLIVEHomeConnector | null>(null)
   const unsubscribe = useRef<(() => void) | null>(null)
+  const autoReconnectBusy = useRef(false)
+  const autoReconnectEnabled = useRef(true)
   const audio = useRef<AudioContext | null>(null)
   const onlineSocket = useRef<Socket | null>(null)
   const onlineSeatRef = useRef<number | null>(null)
@@ -169,6 +171,7 @@ export const Example = () => {
   const [mode, setMode] = useState<Mode>('01')
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [searchingForBoard, setSearchingForBoard] = useState(false)
   const [error, setError] = useState('')
   const [count, setCount] = useState(2)
   const [names, setNames] = useState(['PLAYER 1', 'PLAYER 2', 'PLAYER 3', 'PLAYER 4'])
@@ -201,6 +204,8 @@ export const Example = () => {
   onlineStatusRef.current = onlineStatus
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
   const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
@@ -570,7 +575,28 @@ export const Example = () => {
 
   useEffect(() => {
     connector.current = new DARTSLIVEHomeConnector()
-    const timer = window.setInterval(() => { if (connector.current && !connector.current.isConnected) setConnected(false) }, 1000)
+    const reconnect = async () => {
+      const current = connector.current
+      if (!current || !autoReconnectEnabled.current || current.isConnected || autoReconnectBusy.current) return
+      autoReconnectBusy.current = true
+      try {
+        if (!await current.hasAuthorizedDevice()) { setSearchingForBoard(false); return }
+        setSearchingForBoard(true)
+        if (!await current.reconnectAuthorized()) return
+        unsubscribe.current?.()
+        unsubscribe.current = await current.subscribe(receive)
+        setManual(false); setConnected(true); setSearchingForBoard(false); setError('')
+      } catch {
+        current.disconnect()
+      } finally {
+        autoReconnectBusy.current = false
+      }
+    }
+    const timer = window.setInterval(() => {
+      if (connector.current && !connector.current.isConnected) setConnected(false)
+      void reconnect()
+    }, 4000)
+    void reconnect()
     return () => { window.clearInterval(timer); unsubscribe.current?.(); connector.current?.disconnect(); localStreamRef.current?.getTracks().forEach(track => track.stop()); peerConnection.current?.close(); onlineSocket.current?.disconnect(); void audio.current?.close() }
   }, [])
   useEffect(() => {
@@ -634,6 +660,8 @@ export const Example = () => {
 
   const connect = async () => {
     if (!('bluetooth' in navigator)) { setError('BluetoothはChrome / Edgeで、localhostまたはHTTPSから利用できます。'); return }
+    autoReconnectEnabled.current = true
+    setSearchingForBoard(false)
     setConnecting(true); setError('')
     try {
       unsubscribe.current?.(); unsubscribe.current = null
@@ -644,7 +672,7 @@ export const Example = () => {
     finally { setConnecting(false) }
   }
   useEffect(() => { if (!connected) setManual(true) }, [connected])
-  const disconnect = () => { unsubscribe.current?.(); unsubscribe.current = null; connector.current?.disconnect(); setConnected(false); setManual(true) }
+  const disconnect = () => { autoReconnectEnabled.current = false; setSearchingForBoard(false); unsubscribe.current?.(); unsubscribe.current = null; connector.current?.disconnect(); setConnected(false); setManual(true) }
   const selectMode = (next: Mode) => {
     setMode(next); setScreen('setup'); setError('')
     setCount(next === 'practice' || next === 'robo' ? 1 : 2)
@@ -660,14 +688,28 @@ export const Example = () => {
     if (gameMode !== mode) setMode(gameMode)
     gameRef.current = next; setGame(next); setHistory([]); setScreen('game')
   }
-  const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
+  const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
+  const goHome = () => { if (screen === 'game' && game && !game.finished) { setExitConfirmOpen(true); return }; leaveGameForHome() }
   const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
 
   return <main className="app-shell">
     {awardPlaying && game?.award && <AwardMovie key={game.award.id} award={game.award} onSkip={() => setDismissedAward(game.award!.id)}/>}
+    {exitConfirmOpen && <div className="exit-confirm-layer">
+      <button className="exit-confirm-backdrop" aria-label="ゲームに戻る" onClick={() => setExitConfirmOpen(false)} />
+      <section className="exit-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-description" onKeyDown={event => { if (event.key === 'Escape') setExitConfirmOpen(false) }}>
+        <div className="exit-confirm-topline"><div className="exit-confirm-kicker"><span/> GAME IN PROGRESS</div><button className="exit-confirm-close" onClick={() => setExitConfirmOpen(false)} aria-label="ゲームに戻る">×</button></div>
+        <h2 id="exit-confirm-title">ゲームを終了しますか？</h2>
+        <p id="exit-confirm-description">進行中のゲームを終了して、ホームに戻ります。</p>
+        <div className="exit-confirm-actions">
+          <button className="exit-continue" autoFocus onClick={() => setExitConfirmOpen(false)}>ゲームを続ける</button>
+          <button className="exit-leave" onClick={leaveGameForHome}>終了してホームへ <span>→</span></button>
+        </div>
+      </section>
+    </div>}
     <header className="topbar">
       <button className="wordmark" onClick={goHome}><span className="mark">D</span><span>DARTS<small>ROOM</small></span></button>
-      <div className="board-status"><span className={`status-dot ${connected ? 'online' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected ? disconnect : connect}>{connecting ? '接続中…' : connected ? '切断' : 'Bluetooth接続'}</button></div>
+      <div className="header-actions"><div className="board-status"><span className={`status-dot ${connected ? 'online' : searchingForBoard ? 'searching' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : searchingForBoard ? 'DARTSLIVE HOMEを検索中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected || searchingForBoard ? disconnect : connect}>{connecting ? '接続先を選択中…' : connected ? '切断' : searchingForBoard ? '検索停止' : 'Bluetooth接続'}</button></div>
+        <button className="account-toggle" onClick={() => setAccountOpen(true)} aria-label="アカウントとRTを開く" title="アカウントとRT" aria-expanded={accountOpen} aria-controls="account-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
     </header>
     {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>閉じる</button></div>}
 
@@ -685,7 +727,13 @@ export const Example = () => {
         </div>}
       </section>
     </>}
-    <div hidden={screen !== 'home' && !game?.finished}><AccountPanel game={game} seat={onlineSeat} onDisplayName={handleGoogleDisplayName} /></div>
+    <div className="account-drawer-layer" hidden={!accountOpen}>
+      <button className="account-drawer-backdrop" aria-label="アカウントパネルを閉じる" onClick={() => setAccountOpen(false)} />
+      <aside id="account-drawer" className="account-drawer" role="dialog" aria-modal="true" aria-label="アカウントとRT" onKeyDown={event => { if (event.key === 'Escape') setAccountOpen(false) }}>
+        <header className="account-drawer-heading"><div><span className="kicker">PLAYER PROFILE</span><h2>ACCOUNT / RT</h2></div><button onClick={() => setAccountOpen(false)} aria-label="閉じる">×</button></header>
+        <AccountPanel game={game} seat={onlineSeat} onDisplayName={handleGoogleDisplayName} />
+      </aside>
+    </div>
 
     {screen === 'setup' && <section className="setup-view">
       <button className="back-link" onClick={() => setScreen('home')}>← <span>ゲーム選択へ戻る</span></button>

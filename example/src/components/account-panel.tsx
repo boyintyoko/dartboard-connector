@@ -121,7 +121,6 @@ export function AccountPanel({ game, seat, onDisplayName }: { game: Game | null;
     </div>
     <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(1) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム` : 'ログインして対人成績を記録'}</small></div>
     <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span></div>
-    <details className="rating-method"><summary>算出方法・記録対象</summary><p>01（FAT BULL）と標準CRICKETをレグごとに記録。ROBO MATCHの成績も含みます。01は誰かが80%を削ったターン、CRは誰かが6ナンバーをオープンしたターンまでのラウンド平均です。ソロ・ROBO・練習は対象外。ログイン後に開始したゲームの本人分を保存します。</p><p>直近30ゲームの種目別平均を公開換算表で1〜18に換算し、両種目のレベルを平均します。公式の重み付けは非公開のため、DARTSLIVE公式レーティングとは異なる参考値です。</p><a href="https://dlservicehelp.dartslive.com/hc/ja/articles/360058145813" target="_blank" rel="noreferrer">DARTSLIVE公式のスタッツ・換算表</a></details>
     {status && <p className="account-message" role="status">{status}</p>}{error && <p className="account-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>再試行</button></p>}
   </section>
 }
