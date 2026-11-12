@@ -7,6 +7,7 @@ const fs = require('node:fs')
 let serverProcess
 let mainWindow
 let appUrl
+let pendingBluetoothRequest = null
 
 function findServerFile() {
   const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'app')
@@ -64,24 +65,101 @@ async function startLocalServer() {
 }
 
 function installBluetoothPicker(webContents) {
-  webContents.on('select-bluetooth-device', async (event, devices, callback) => {
+  webContents.on('select-bluetooth-device', (event, devices, callback) => {
     event.preventDefault()
-    const options = devices.map((device) => `${device.deviceName || 'Bluetooth device'}  (${device.deviceId})`)
-    if (!options.length) {
-      callback('')
+    if (!pendingBluetoothRequest) {
+      pendingBluetoothRequest = {
+        callback,
+        devices: new Map(),
+        showTimer: null,
+        emptyTimer: null,
+        dialogOpen: false,
+      }
+    }
+    const request = pendingBluetoothRequest
+    request.callback = callback
+    for (const device of devices) request.devices.set(device.deviceId, device)
+
+    const finish = (deviceId = '') => {
+      if (pendingBluetoothRequest !== request) return
+      clearTimeout(request.showTimer)
+      clearTimeout(request.emptyTimer)
+      pendingBluetoothRequest = null
+      request.callback(deviceId)
+    }
+
+    if (request.devices.size > 0) {
+      clearTimeout(request.emptyTimer)
+      if (request.showTimer || request.dialogOpen) return
+      request.showTimer = setTimeout(async () => {
+        request.showTimer = null
+        if (pendingBluetoothRequest !== request || request.dialogOpen) return
+        const found = [...request.devices.values()]
+        request.dialogOpen = true
+        try {
+          const result = await dialog.showMessageBox(mainWindow, {
+            type: 'question',
+            title: 'Bluetoothボードを選択',
+            message: '接続するダーツボードを選択してください。',
+            detail: found.map((device) => device.deviceName || '名前のないBluetooth機器').join('\n'),
+            buttons: [...found.map((device) => device.deviceName || 'Bluetooth機器'), 'キャンセル'],
+            cancelId: found.length,
+            defaultId: 0,
+            noLink: true,
+          })
+          finish(result.response < found.length ? found[result.response].deviceId : '')
+        } catch {
+          finish('')
+        }
+      }, 900)
       return
     }
+
+    if (!request.emptyTimer) {
+      request.emptyTimer = setTimeout(async () => {
+        if (pendingBluetoothRequest !== request || request.devices.size > 0) return
+        await dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          title: 'Bluetoothボードが見つかりません',
+          message: 'DARTSLIVE HOMEが見つかりませんでした。',
+          detail: 'ボードの電源を入れてPCの近くに置き、他のアプリとの接続を切ってから再試行してください。WindowsのBluetoothもオンにしてください。',
+          buttons: ['OK'],
+          noLink: true,
+        })
+        finish('')
+      }, 15000)
+    }
+  })
+}
+
+function installBluetoothPairingHandler(targetSession) {
+  targetSession.setBluetoothPairingHandler(async (details, callback) => {
+    if (details.pairingKind === 'providePin') {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Bluetooth PINが必要です',
+        message: 'このボードからPIN入力を求められました。',
+        detail: 'DARTSLIVE HOMEの通常接続ではPIN入力は必要ありません。WindowsのBluetooth設定でボードをペアリングしてから、もう一度接続してください。',
+        buttons: ['OK'],
+        noLink: true,
+      })
+      callback({ confirmed: false })
+      return
+    }
+
+    const detail = details.pairingKind === 'confirmPin'
+      ? `ボードに表示されたPINが「${details.pin}」と一致することを確認してください。`
+      : 'DARTSLIVE HOMEとのBluetoothペアリングを許可しますか？'
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'question',
-      title: 'Bluetoothボードを選択',
-      message: '接続するダーツボードを選択してください。',
-      detail: options.join('\n'),
-      buttons: [...devices.map((device) => device.deviceName || device.deviceId), 'キャンセル'],
-      cancelId: devices.length,
+      title: 'Bluetoothペアリング',
+      message: detail,
+      buttons: ['許可', 'キャンセル'],
+      cancelId: 1,
       defaultId: 0,
       noLink: true,
     })
-    callback(result.response < devices.length ? devices[result.response].deviceId : '')
+    callback({ confirmed: result.response === 0 })
   })
 }
 
@@ -101,6 +179,7 @@ function allowAppPermissions(targetSession) {
 async function createWindow() {
   const targetSession = session.defaultSession
   allowAppPermissions(targetSession)
+  installBluetoothPairingHandler(targetSession)
 
   mainWindow = new BrowserWindow({
     width: 1440,
