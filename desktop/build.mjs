@@ -8,6 +8,14 @@ const example = path.join(root, 'example')
 const standalone = path.join(example, '.next', 'standalone')
 const appOutput = path.join(root, 'desktop', 'app')
 
+const tscBin = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc')
+const libraryBuild = spawnSync(process.execPath, [
+  tscBin,
+  '-p',
+  path.join(root, 'packages', 'dartboard-connector', 'tsconfig.json'),
+], { cwd: root, stdio: 'inherit' })
+if (libraryBuild.status !== 0) process.exit(libraryBuild.status ?? 1)
+
 const nextBin = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next')
 const build = spawnSync(process.execPath, [nextBin, 'build'], {
   cwd: example,
