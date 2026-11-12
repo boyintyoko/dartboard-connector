@@ -1,0 +1,31 @@
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/render-global
+    paths:
+      - '.github/workflows/build-windows-app.yml'
+      - 'desktop/**'
+      - 'example/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darts-room-windows-x64
+          path: dist/windows/*.exe
+          if-no-files-found: error
+          retention-days: 30
