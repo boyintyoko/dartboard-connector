@@ -134,3 +134,19 @@
 .cricket-mark-count.marks-1{color:#eff3f6}
 .cricket-mark-count.marks-2{color:#69b8ed}
 .cricket-mark-count.marks-3{color:var(--lime);text-shadow:0 0 9px #c4f36a80}
+
+/* Keep the camera strip from pushing the first Cricket row out of view. */
+.match-video-cricket{margin-top:5px;padding:6px;gap:6px 10px}
+.match-video-cricket .match-video-frame{min-height:0;max-height:clamp(42px,8vh,88px)}
+@media (min-width:761px) and (min-height:650px){
+ .match-video-cricket .match-video-frame{max-height:min(8vh,88px)}
+ .board-wrap:has(.cricket-score){justify-content:flex-start}
+ .board-wrap:has(.cricket-score) .board{height:min(36vh,360px)}
+}
+@media (min-width:761px) and (min-height:650px) and (max-height:850px){
+ .board-wrap:has(.cricket-score) .board{height:min(30vh,250px)}
+ .cricket-mark-count{font-size:clamp(22px,3vh,28px)}
+}
+@media (max-width:760px) and (max-height:900px){
+ .match-video-cricket .match-video-frame{max-height:clamp(30px,5vh,44px)}
+}

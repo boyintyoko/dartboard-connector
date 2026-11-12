@@ -197,6 +197,8 @@ export const Example = () => {
   const [game, setGame] = useState<Game | null>(null)
   const [history, setHistory] = useState<Game[]>([])
   const [onlineStatus, setOnlineStatus] = useState<'offline' | 'connecting' | 'searching' | 'matched'>('offline')
+  const onlineStatusRef = useRef(onlineStatus)
+  onlineStatusRef.current = onlineStatus
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
   const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
@@ -396,30 +398,33 @@ export const Example = () => {
     }
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit) => {
-    let resolved = onlineStatus === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
+    let resolved = onlineStatusRef.current === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
-    const completedOnlineTurn = onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
+    const completedOnlineTurn = onlineStatusRef.current === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
     if (completedOnlineTurn && !resolved.finished) {
       const award = resolved.award
       resolved = { ...nextTurn(resolved), award }
     }
     if (resolved === previous) return
     gameRef.current = resolved; setHistory(items => resolved.ratingResults.length > previous.ratingResults.length ? [] : [...items, previous]); setGame(resolved)
-    if (onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
+    if (onlineStatusRef.current === 'matched' && onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
     if (hit) playSound(hit)
-  }, [onlineStatus, playSound, onlineSeat])
+  }, [playSound])
   const apply = useCallback((action: 'next' | Hit) => {
     const previous = gameRef.current
     if (!previous || previous.finished || awardPlayingRef.current) return
-    if (onlineStatus === 'matched' && previous.active !== onlineSeat) return
-    if (onlineStatus === 'matched' && onlineSeat === 1) {
+    const seat = onlineSeatRef.current
+    if (onlineStatusRef.current === 'matched' && (seat === null || previous.active !== seat)) return
+    if (onlineStatusRef.current === 'matched' && seat === 1) {
       onlineSocket.current?.emit('match:action', { type: 'throw', action: action === 'next' ? { type: 'next' } : action })
       return
     }
     const next = action === 'next' ? nextTurn(previous) : previous.mode === 'match' && previous.match?.stage === 'cork' ? throwCork(previous, action) : throwDart(previous, action)
     commitGame(previous, next, action === 'next' ? undefined : action)
   }, [commitGame, onlineSeat, onlineStatus])
+  const applyRef = useRef(apply)
+  applyRef.current = apply
   const requestMatchDecision = (type: 'first' | 'choose' | 'select-game' | 'cork-winner', value: 'first' | 'game' | '01' | 'cricket' | number) => {
     if (!game || awardPlayingRef.current) return
     if (isRoboGame(game) && game.active === 1) return
@@ -437,9 +442,11 @@ export const Example = () => {
   }
   const receive = useCallback((signal: BoardSignal) => {
     const previous = gameRef.current
+    const seat = onlineSeatRef.current
+    if (onlineStatusRef.current === 'matched' && (seat === null || previous?.active !== seat)) return
     const result = receiveBoardSignal(previous, signal)
-    if (previous && result.applied && result.game) apply(signal.type === 'segment' ? signal : 'next')
-  }, [apply])
+    if (previous && result.applied && result.game) applyRef.current(signal.type === 'segment' ? signal : 'next')
+  }, [])
 
   const findOnlineOpponent = () => {
     if (onlineStatus === 'searching') {
@@ -447,24 +454,29 @@ export const Example = () => {
       onlineSocket.current?.disconnect()
       onlineSocket.current = null
       setOnlineSeat(null)
+      onlineSeatRef.current = null
+      onlineStatusRef.current = 'offline'
       setOnlineStatus('offline')
       return
     }
     setError('')
+    onlineStatusRef.current = 'connecting'
     setOnlineStatus('connecting')
     const configuredUrl = process.env.NEXT_PUBLIC_MATCH_SERVER_URL
     const url = configuredUrl || (process.env.NODE_ENV === 'production' ? 'https://darts-room-match.onrender.com' : `http://${window.location.hostname}:4001`)
     const socket = io(url, { transports: ['websocket', 'polling'], timeout: 10000 })
     onlineSocket.current?.disconnect()
     onlineSocket.current = socket
-    socket.on('connect', () => { setOnlineStatus('searching'); socket.emit('queue:join', { mode: onlineMode }) })
+    socket.on('connect', () => { onlineStatusRef.current = 'searching'; setOnlineStatus('searching'); socket.emit('queue:join', { mode: onlineMode }) })
     socket.on('connect_error', cause => {
+      onlineStatusRef.current = 'offline'
       setOnlineStatus('offline')
       setError(`マッチングサーバーに接続できません。サーバーを起動してください。(${cause.message})`)
       socket.disconnect()
     })
     socket.on('match:found', (match: { room: string; seat: number; mode: Mode; players: string[] }) => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
+      onlineStatusRef.current = 'matched'
       setOnlineStatus('matched')
       setOnlineSelectionOpen(false)
       void ensurePeerConnection().then(() => match.seat === 0 ? makeVideoOffer() : undefined).catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
@@ -523,7 +535,11 @@ export const Example = () => {
         return
       }
       const previous = gameRef.current
-      if (!previous || previous.finished || previous.active !== request.seat || awardPlayingRef.current) return
+      if (!previous) return
+      if (previous.finished || previous.active !== request.seat || awardPlayingRef.current) {
+        onlineSocket.current?.emit('match:state', previous)
+        return
+      }
       let next: Game
       if (request.type === 'throw') {
         const action = request.action!
@@ -540,6 +556,7 @@ export const Example = () => {
     socket.on('match:opponent-left', () => {
       setError('対戦相手が退出しました。')
       closeVideo()
+      onlineStatusRef.current = 'offline'
       setOnlineStatus('offline')
       setOnlineSeat(null)
       onlineSeatRef.current = null
@@ -643,7 +660,7 @@ export const Example = () => {
     if (gameMode !== mode) setMode(gameMode)
     gameRef.current = next; setGame(next); setHistory([]); setScreen('game')
   }
-  const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
+  const goHome = () => { if (screen === 'game' && game && !game.finished && !window.confirm('ゲームを終了してホームに戻りますか？')) return; if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
   const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
 
   return <main className="app-shell">
@@ -690,7 +707,7 @@ export const Example = () => {
     {screen === 'game' && onlineStatus === 'matched' && !game && <section className="game-view online-waiting"><span className="kicker">RANDOM MATCH</span><h1>対戦相手と接続中</h1><p>ゲーム情報を同期しています…</p></section>}
     {screen === 'game' && game && <section className="game-view">
       <div className="game-toolbar"><button className="back-link" onClick={goHome}>← ホーム</button><div className="game-label"><span className={`mini-dot ${modeInfo.accent}`} />{mode === 'practice' ? practiceModeTitle[game.practiceMode] : modeInfo.title}{onlineStatus === 'matched' ? ' · ONLINE' : isRoboGame(game) || mode === 'robo' ? ' · CPU対戦' : ''}</div><div className="game-round">{mode === 'practice' ? game.practiceMode === 'target' ? 'FREE PRACTICE' : `ROUND ${game.round} / ${game.limit}` : mode === 'match' ? `LEG ${game.match!.legIndex + 1} / ${game.match!.bestOf} · ${game.match!.legWins[0]} - ${game.match!.legWins[1]}` : `ROUND ${game.round}${game.limit ? ` / ${game.limit}` : ''}`}</div></div>
-      {onlineStatus === 'matched' && <div className="match-video-panel">
+      {onlineStatus === 'matched' && <div className={`match-video-panel${mode === 'cricket' || (mode === 'match' || mode === 'robo') && game.legMode === 'cricket' ? ' match-video-cricket' : ''}`}>
         <div className="match-video-feeds">
           <div className="match-video-feed"><div className="match-video-frame">{localStream ? <video ref={localVideo} autoPlay playsInline muted /> : <span>あなたのカメラはオフです</span>}<small>YOU</small></div></div>
           <div className="match-video-feed"><div className="match-video-frame">{remoteStream && remoteVideoActive ? <video ref={remoteVideo} autoPlay playsInline muted /> : <span>{videoConnectionState === 'failed' ? '映像接続に失敗しました · 別のネットワークをお試しください' : videoConnectionState !== 'connected' ? '相手と映像を接続中…' : remoteStream ? '相手のカメラはオフです' : '相手のカメラを待っています'}</span>}<small>OPPONENT</small></div></div>
