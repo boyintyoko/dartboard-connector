@@ -207,6 +207,7 @@ export const Example = () => {
   const [manual, setManual] = useState(true)
   const [game, setGame] = useState<Game | null>(null)
   const [history, setHistory] = useState<Game[]>([])
+  const historyRef = useRef<Game[]>([])
   const [onlineStatus, setOnlineStatus] = useState<'offline' | 'connecting' | 'searching' | 'matched'>('offline')
   const onlineStatusRef = useRef(onlineStatus)
   onlineStatusRef.current = onlineStatus
@@ -421,7 +422,7 @@ export const Example = () => {
       tone(pitch, 0.01, 0.13, 0.065, 'triangle')
     }
   }, [])
-  const commitGame = useCallback((previous: Game, next: Game, hit?: Hit) => {
+  const commitGame = useCallback((previous: Game, next: Game, hit?: Hit, saveHistory = true) => {
     let resolved = onlineStatusRef.current === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
@@ -431,7 +432,11 @@ export const Example = () => {
       resolved = { ...nextTurn(resolved), award }
     }
     if (resolved === previous) return
-    gameRef.current = resolved; setHistory(items => resolved.ratingResults.length > previous.ratingResults.length ? [] : [...items, previous]); setGame(resolved)
+    const nextHistory = resolved.ratingResults.length > previous.ratingResults.length
+      ? []
+      : saveHistory ? [...historyRef.current, previous] : historyRef.current
+    historyRef.current = nextHistory
+    gameRef.current = resolved; setHistory(nextHistory); setGame(resolved)
     if (onlineStatusRef.current === 'matched' && onlineSeatRef.current === 0) onlineSocket.current?.emit('match:state', resolved)
     if (hit) playSound(hit)
   }, [playSound])
@@ -508,6 +513,7 @@ export const Example = () => {
       setCount(2)
       setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
       setScreen('game')
+      historyRef.current = []
       setHistory([])
       if (match.seat === 0) {
         const initialGame = createGame(match.mode, match.players, 501, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
@@ -684,7 +690,7 @@ export const Example = () => {
       if (current !== completedTurn || current.finished || current.mode === 'match' && current.match?.stage !== 'playing') return
       autoChangedTurn.current = completedTurn
       const changed = nextTurn(current)
-      commitGame(current, changed)
+      commitGame(current, changed, undefined, false)
     }, game.award ? 180 : isRoboGame(game) && game.active === 1 ? 1600 : game.bust ? 700 : 650)
     return () => window.clearTimeout(timer)
   }, [game, onlineStatus, onlineSeat, commitGame, awardPlaying])
@@ -717,16 +723,23 @@ export const Example = () => {
     const gameMode = mode === 'robo' && roboGameMode === 'match' ? 'match' : mode
     const next = createGame(gameMode, players, initial, bull, outRule, practiceTarget, matchBestOf, matchLeadRule, roboGameMode === 'cricket' ? 'cricket' : '01', practiceMode)
     if (gameMode !== mode) setMode(gameMode)
-    gameRef.current = next; setGame(next); setHistory([]); setScreen('game')
+    gameRef.current = next; setGame(next); historyRef.current = []; setHistory([]); setScreen('game')
   }
-  const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
+  const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); historyRef.current = []; setHistory([]); setScreen('home') }
   const goHome = () => { if (screen === 'game' && game && !game.finished) { setExitConfirmOpen(true); return }; leaveGameForHome() }
   const advanceLeg = () => {
     const previous = gameRef.current
     if (!previous || previous.mode !== 'match' || previous.match?.stage !== 'leg-finished' || onlineStatusRef.current === 'matched' && onlineSeatRef.current !== 0) return
     commitGame(previous, advanceMatchLeg(previous))
   }
-  const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
+  const undo = () => {
+    const previous = historyRef.current.at(-1)
+    if (!previous) return
+    historyRef.current = historyRef.current.slice(0, -1)
+    gameRef.current = previous
+    setGame(previous)
+    setHistory(historyRef.current)
+  }
 
   return <main className="app-shell">
     {awardPlaying && game?.award && <AwardMovie key={game.award.id} award={game.award} onSkip={() => setDismissedAward(game.award!.id)}/>}
@@ -801,7 +814,7 @@ export const Example = () => {
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
       {!(game.finished || mode === 'match' && game.match?.stage === 'leg-finished') && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{isRoboGame(game) && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits} / ${p.darts}` : p.score : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? game.practiceMode === 'target' || game.practiceMode === 'eagles-eye' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `AVG ${p.darts ? (p.points / p.darts).toFixed(1) : '—'} / DART` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
-      {game.finished || mode === 'match' && game.match?.stage === 'leg-finished' ? <><GameResults game={game}/><div className="finish-card">{mode === 'match' && game.match?.stage === 'leg-finished' ? onlineStatus === 'matched' && onlineSeat !== 0 ? <p className="board-hint">ホストがNEXT ROUNDを押すと、次のLEGが始まります。</p> : <button className="primary-button" onClick={advanceLeg}>NEXT ROUND <span>→</span></button> : <>{onlineStatus !== 'matched' && <button className="primary-button" onClick={() => { if (isRoboGame(game)) setMode('robo'); gameRef.current = null; setGame(null); setHistory([]); setScreen('setup') }}>同じ設定でもう一度 <span>↻</span></button>}<button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></>}</div></> : <div className="play-layout">
+      {game.finished || mode === 'match' && game.match?.stage === 'leg-finished' ? <><GameResults game={game}/><div className="finish-card">{mode === 'match' && game.match?.stage === 'leg-finished' ? onlineStatus === 'matched' && onlineSeat !== 0 ? <p className="board-hint">ホストがNEXT ROUNDを押すと、次のLEGが始まります。</p> : <button className="primary-button" onClick={advanceLeg}>NEXT ROUND <span>→</span></button> : <>{onlineStatus !== 'matched' && <button className="primary-button" onClick={() => { if (isRoboGame(game)) setMode('robo'); gameRef.current = null; setGame(null); historyRef.current = []; setHistory([]); setScreen('setup') }}>同じ設定でもう一度 <span>↻</span></button>}<button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></>}</div></> : <div className="play-layout">
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${(mode === 'robo' || isRoboGame(game)) && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits}` : activePlayer?.score : activePlayer?.score}</div>
