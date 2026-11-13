@@ -174,3 +174,4 @@
  .match-video-cricket .match-video-frame{max-height:clamp(30px,5vh,44px)}
 }
 @keyframes bluetooth-pulse{0%,100%{box-shadow:0 0 0 0 #c4f36a45}50%{box-shadow:0 0 0 6px #c4f36a00}}.status-dot.searching{background:var(--lime);animation:bluetooth-pulse 1.8s ease-in-out infinite}.board-status>span:nth-child(2){transition:color .2s}.board-status:has(.status-dot.searching)>span:nth-child(2){color:var(--lime)}
+*{scrollbar-width:none}*::-webkit-scrollbar{display:none}
