@@ -22,7 +22,7 @@ export type MatchState = {
 }
 export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string }
 export type RoundStats = { points: number; marks: number; rounds: number }
-export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; winner: number | null; eligible: boolean }
+export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; stats100: number[]; winner: number | null; eligible: boolean; createdAt: string }
 export type Game = {
   id: string
   initial: number
@@ -120,11 +120,12 @@ function recordResult(game: Game, winner: number | null): Game {
   if (game.ratingResults.some(result => result.id === id)) return game
   const mode = isX01Game(game) ? '01' : 'cricket'
   const stats = (game.statsFrozen ?? game.statsTotals).map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
+  const stats100 = game.statsTotals.map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
   const eligible = game.players.length >= 2 && (mode !== '01' || game.bull === 'fat') && game.statsTotals.every(p => p.rounds > 0)
-  return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, winner, eligible }] }
+  return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, stats100, winner, eligible, createdAt: new Date().toISOString() }] }
 }
 function trackStats(before: Game, after: Game, hit: Hit): Game {
-  if (after.mode === 'practice' || before.statsFrozen) return after
+  if (after.mode === 'practice') return after
   const totals = copyStats(before.statsTotals)
   const own = totals[before.active]
   if (!before.throws.length) own.rounds++

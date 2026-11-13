@@ -6,6 +6,9 @@ import type { Game } from '../lib/game'
 import { summarizeRating, type SavedResult } from '../lib/rating'
 
 type PendingResult = SavedResult & { user_id: string }
+const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+const dateFromKey = (key: string) => new Date(`${key}T12:00:00`)
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 
 export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCameraAutoStart }: { game: Game | null; seat: number | null; onDisplayName: (name: string | null) => void; cameraAutoStart: boolean; onCameraAutoStart: (enabled: boolean) => void }) {
   const [client, setClient] = useState<SupabaseClient | null>(null)
@@ -18,8 +21,16 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const [refresh, setRefresh] = useState(0)
   const [loginBusy, setLoginBusy] = useState(false)
   const [queue, setQueue] = useState<{ userId: string | null; rows: PendingResult[] }>({ userId: null, rows: [] })
+  const [selectedDay, setSelectedDay] = useState('')
+  const [visibleMonth, setVisibleMonth] = useState('')
   const owners = useRef(new Map<string, { userId: string | null; seat: number }>())
   const saved = useRef(new Set<string>())
+
+  useEffect(() => {
+    const today = new Date()
+    setSelectedDay(localDateKey(today))
+    setVisibleMonth(monthKey(today))
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -53,7 +64,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     setResults([])
     if (!client || !user) return
     let live = true
-    void client.from('darts_game_results').select('game_id,mode,stats,won,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).order('game_id', { ascending: false }).limit(30).then(({ data, error: cause }) => {
+    void client.from('darts_game_results').select('game_id,mode,stats,stats_100,score,won,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).order('game_id', { ascending: false }).limit(1000).then(({ data, error: cause }) => {
       if (!live) return
       if (cause) setError(`成績を読み込めませんでした: ${cause.message}`)
       else { setResults((data ?? []) as SavedResult[]); setError('') }
@@ -64,7 +75,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     if (!user) { setQueue({ userId: null, rows: [] }); return }
     try {
       const stored = JSON.parse(localStorage.getItem(`darts-results:${user.id}`) || '[]')
-      const rows = Array.isArray(stored) ? stored.filter(row => row.user_id === user.id && typeof row.game_id === 'string' && ['01', 'cricket'].includes(row.mode) && Number.isFinite(row.stats)) : []
+      const rows = Array.isArray(stored) ? stored.filter(row => row.user_id === user.id && typeof row.game_id === 'string' && ['01', 'cricket', 'count-up'].includes(row.mode) && Number.isFinite(row.stats)) : []
       setQueue({ userId: user.id, rows })
     } catch { setQueue({ userId: user.id, rows: [] }) }
   }, [user?.id])
@@ -78,8 +89,20 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     if (!owner || owner.userId !== user.id) return
     const pending = game.ratingResults.filter(result => result.eligible && !saved.current.has(`${user.id}:${result.id}`) && !queue.rows.some(row => row.game_id === result.id))
     if (!pending.length) return
-    const rows = pending.map(result => ({ user_id: user.id, game_id: result.id, mode: result.mode, stats: result.stats[owner.seat], won: result.winner === owner.seat }))
+    const rows = pending.map(result => ({ user_id: user.id, game_id: result.id, mode: result.mode, stats: result.stats[owner.seat], stats_100: result.stats100?.[owner.seat] ?? null, won: result.winner === owner.seat, created_at: result.createdAt || new Date().toISOString() }))
     setQueue(old => ({ userId: user.id, rows: [...old.rows, ...rows] }))
+  }, [game, user?.id, queue])
+  useEffect(() => {
+    if (!user || !game || game.mode !== 'practice' || game.practiceMode !== 'count-up' || !game.finished || queue.userId !== user.id) return
+    const owner = owners.current.get(game.id)
+    if (!owner || owner.userId !== user.id) return
+    const gameId = `${game.id}:count-up`
+    if (saved.current.has(`${user.id}:${gameId}`) || queue.rows.some(row => row.game_id === gameId)) return
+    const player = game.players[owner.seat]
+    if (!player) return
+    const average = game.limit ? player.score / game.limit : 0
+    const result: PendingResult = { user_id: user.id, game_id: gameId, mode: 'count-up', stats: average, stats_100: average, score: player.score, won: game.winner === owner.seat, created_at: new Date().toISOString() }
+    setQueue(old => ({ userId: user.id, rows: [...old.rows, result] }))
   }, [game, user?.id, queue])
   useEffect(() => {
     if (!client || !user || queue.userId !== user.id || !queue.rows.length) return
@@ -114,6 +137,25 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     else { setUser(null); setResults([]); setStatus(''); setError('') }
   }
   const summary = summarizeRating(results)
+  const displayedMonth = visibleMonth ? dateFromKey(`${visibleMonth}-01`) : new Date()
+  const daysInMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + 1, 0).getDate()
+  const monthOffset = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth(), 1).getDay()
+  const recordedDays = new Set(results.flatMap(result => result.created_at ? [localDateKey(new Date(result.created_at))] : []))
+  const selectedResults = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) === selectedDay)
+  const resultsUpToDay = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) <= selectedDay)
+  const dayRating = summarizeRating(resultsUpToDay)
+  const dailyAverage = (mode: SavedResult['mode'], field: 'stats' | 'stats_100') => {
+    const games = selectedResults.filter(result => result.mode === mode && typeof result[field] === 'number' && Number.isFinite(result[field]))
+    return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
+  }
+  const countUpGames = selectedResults.filter(result => result.mode === 'count-up')
+  const countUpScoreAverage = countUpGames.length ? countUpGames.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpGames.length : null
+  const countUpRoundAverage = dailyAverage('count-up', 'stats')
+  const monthTitle = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long' }).format(displayedMonth)
+  const changeMonth = (amount: number) => {
+    const date = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + amount, 1)
+    setVisibleMonth(monthKey(date))
+  }
   return <section className="account-panel" aria-label="アカウントとレーティング">
     <div className="account-camera-setting"><div><span className="kicker">ONLINE VIDEO</span><strong>カメラ設定</strong><small>マッチ成立時に自動でカメラをオンにします。マイク音声は共有しません。</small></div><label><input type="checkbox" checked={cameraAutoStart} onChange={event => onCameraAutoStart(event.target.checked)} /> 自動でオン</label></div>
     <div className="account-identity"><span className="kicker">MY ACCOUNT</span><strong>{user ? user.user_metadata.full_name || user.email || 'PLAYER' : 'ゲスト'}</strong>
@@ -122,6 +164,30 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     </div>
     <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(1) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム` : 'ログインして対人成績を記録'}</small></div>
     <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span></div>
+    {user ? <section className="stats-calendar" aria-label="日別スタッツ">
+      <header className="stats-calendar-heading"><div><span className="kicker">PLAY HISTORY</span><h3>日別スタッツ</h3></div><div className="calendar-month-nav"><button onClick={() => changeMonth(-1)} aria-label="前の月">←</button><strong>{monthTitle}</strong><button onClick={() => changeMonth(1)} aria-label="次の月">→</button></div></header>
+      <div className="calendar-grid" role="grid" aria-label={monthTitle}>
+        {['日','月','火','水','木','金','土'].map(day => <span className="calendar-weekday" key={day} role="columnheader">{day}</span>)}
+        {Array.from({ length: monthOffset }, (_, index) => <span className="calendar-empty" key={`empty-${index}`} aria-hidden="true"/>)}
+        {Array.from({ length: daysInMonth }, (_, index) => {
+          const day = index + 1
+          const key = `${visibleMonth || monthKey(displayedMonth)}-${String(day).padStart(2, '0')}`
+          const hasResults = recordedDays.has(key)
+          return <button key={key} className={`calendar-day${selectedDay === key ? ' selected' : ''}${hasResults ? ' has-results' : ''}`} role="gridcell" aria-label={`${key}${hasResults ? ' · 記録あり' : ''}`} aria-pressed={selectedDay === key} onClick={() => setSelectedDay(key)}>{day}{hasResults && <i/>}</button>
+        })}
+      </div>
+      <div className="day-stats">
+        <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{selectedResults.length} ゲーム</small></div>
+        <article className="day-rating"><small>この日時点のRT</small><strong>{dayRating.rating?.toFixed(1) ?? '—'} <em>{dayRating.flight}</em></strong><span>{dayRating.rating === null ? 'RT算出には01・CRを含む10ゲームが必要' : `直近${dayRating.count}ゲームの参考RT`}</span></article>
+        <div className="day-metric-grid">
+          <article className="day-metric"><small>01 · 100%</small><strong>{dailyAverage('01','stats_100')?.toFixed(2) ?? '—'}</strong><span>PPR · {selectedResults.filter(row => row.mode === '01').length}ゲーム</span></article>
+          <article className="day-metric"><small>01 · 80%</small><strong>{dailyAverage('01','stats')?.toFixed(2) ?? '—'}</strong><span>PPR</span></article>
+          <article className="day-metric"><small>CRICKET · 100%</small><strong>{dailyAverage('cricket','stats_100')?.toFixed(2) ?? '—'}</strong><span>MPR · {selectedResults.filter(row => row.mode === 'cricket').length}ゲーム</span></article>
+          <article className="day-metric"><small>CRICKET · 80%</small><strong>{dailyAverage('cricket','stats')?.toFixed(2) ?? '—'}</strong><span>MPR</span></article>
+          <article className="day-metric count-up-metric"><small>COUNT-UP · 平均スコア</small><strong>{countUpScoreAverage?.toFixed(0) ?? '—'}</strong><span>{countUpRoundAverage === null ? '8ラウンド平均 —' : `1ラウンド平均 ${countUpRoundAverage.toFixed(1)}`} · {countUpGames.length}ゲーム</span></article>
+        </div>
+      </div>
+    </section> : <p className="stats-calendar-login">Googleログインすると、プレイ履歴を日付ごとに確認できます。</p>}
     {status && <p className="account-message" role="status">{status}</p>}{error && <p className="account-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>再試行</button></p>}
   </section>
 }
