@@ -151,7 +151,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const day01 = dailyAverage('01', 'stats')
   const dayCricket = dailyAverage('cricket', 'stats')
   const dayLevels = [day01 === null ? null : ratingLevel('01', day01), dayCricket === null ? null : ratingLevel('cricket', dayCricket)].filter((level): level is number => level !== null)
-  const dayRt = dayLevels.length ? dayLevels.reduce((sum, level) => sum + level, 0) / dayLevels.length : null
+  const dayRt = dayLevels.length ? Math.round(dayLevels.reduce((sum, level) => sum + level, 0) / dayLevels.length) : null
   const dayFlight = dayRt === null ? '—' : dayRt >= 16 ? 'SA' : dayRt >= 13 ? 'AA' : dayRt >= 10 ? 'A' : dayRt >= 8 ? 'BB' : dayRt >= 6 ? 'B' : dayRt >= 4 ? 'CC' : 'C'
   const hasUnbackfilledStats = selectedResults.some(result => (result.mode === '01' || result.mode === 'cricket') && result.stats_100 == null)
   const countUpGames = selectedResults.filter(result => result.mode === 'count-up')
@@ -168,7 +168,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       {user ? <button onClick={() => void logout()}>ログアウト</button> : <button disabled={!client || !ready || !googleEnabled || loginBusy || !!game && !game.finished} onClick={() => void login()}>{loginBusy ? 'Googleへ移動中…' : 'Googleでログイン'}</button>}
       {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}{ready && client && !googleEnabled && !user && <small>Googleログイン準備中</small>}
     </div>
-    <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(1) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム` : 'ログインして対人成績を記録'}</small></div>
+    <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム · 参考値` : 'ログインして対人成績を記録'}</small></div>
     <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span><span>COUNT-UP <b>{countUpAverage?.toFixed(0) ?? '—'}</b></span></div>
     {user ? <section className="stats-calendar" aria-label="日別スタッツ">
       <header className="stats-calendar-heading"><div><span className="kicker">PLAY HISTORY</span><h3>日別スタッツ</h3></div><div className="calendar-month-nav"><button onClick={() => changeMonth(-1)} aria-label="前の月">←</button><strong>{monthTitle}</strong><button onClick={() => changeMonth(1)} aria-label="次の月">→</button></div></header>
@@ -184,7 +184,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       </div>
       <div className="day-stats">
         <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{selectedResults.length} ゲーム</small></div>
-        <article className="day-rating"><small>この日の参考RT</small><strong>{dayRt?.toFixed(1) ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '当日の01・CRスタッツから算出' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}スタッツから仮算出` : 'この日に01またはCRの記録がありません'}</span></article>
+        <article className="day-rating"><small>この日の参考RT</small><strong>{dayRt ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '当日の01・CRの80%スタッツを換算' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}・80%スタッツから仮算出` : 'この日に01またはCRの記録がありません'}</span></article>
         <div className="day-metric-grid">
           <article className="day-metric"><small>01 · 100%</small><strong>{dailyAverage('01','stats_100')?.toFixed(2) ?? '—'}</strong><span>PPR · {selectedResults.filter(row => row.mode === '01').length}ゲーム</span></article>
           <article className="day-metric"><small>01 · 80%</small><strong>{dailyAverage('01','stats')?.toFixed(2) ?? '—'}</strong><span>PPR</span></article>

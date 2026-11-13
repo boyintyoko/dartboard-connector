@@ -13,7 +13,7 @@ export function summarizeRating(results: SavedResult[]) {
     return games.length ? games.reduce((sum, game) => sum + game.stats, 0) / games.length : null
   }
   const zeroOne = average('01'), cricket = average('cricket')
-  const rating = recent.length >= 10 && zeroOne !== null && cricket !== null ? (ratingLevel('01', zeroOne) + ratingLevel('cricket', cricket)) / 2 : null
+  const rating = recent.length >= 10 && zeroOne !== null && cricket !== null ? Math.round((ratingLevel('01', zeroOne) + ratingLevel('cricket', cricket)) / 2) : null
   const flight = rating === null ? '—' : rating >= 16 ? 'SA' : rating >= 13 ? 'AA' : rating >= 10 ? 'A' : rating >= 8 ? 'BB' : rating >= 6 ? 'B' : rating >= 4 ? 'CC' : 'C'
   return { rating, flight, zeroOne, cricket, count: recent.length }
 }
