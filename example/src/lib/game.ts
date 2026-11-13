@@ -149,6 +149,7 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   return { ...game, match, legMode, players, initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, turnMarks: 0, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
 export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01', practiceMode: PracticeMode = 'target'): Game {
+  const gameBull = mode === 'practice' ? 'fat' : bull
   const match: MatchState | null = mode === 'match' ? {
     bestOf,
     initial,
@@ -160,7 +161,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   const players = newPlayers(names, mode === 'practice' ? practiceStart : initial, gameMode)
   const game: Game = {
     id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [],
-    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
+    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull: gameBull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
     players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
     message: mode === 'match' ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
