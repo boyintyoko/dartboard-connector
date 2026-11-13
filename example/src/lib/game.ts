@@ -16,10 +16,12 @@ export type MatchState = {
   stage: MatchStage
   corkPurpose: 'opening' | 'choice'
   corkThrows: Hit[]
+  corkOrder: [number, number]
   legStarter: number
   choiceOwner: number | null
   choiceAs: 'first' | 'game' | null
 }
+export type OpeningCorkState = { throws: Hit[]; order: [number, number]; attempt: number }
 export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string }
 export type RoundStats = { points: number; marks: number; rounds: number }
 export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; stats100: number[]; winner: number | null; eligible: boolean; createdAt: string }
@@ -34,6 +36,7 @@ export type Game = {
   mode: Mode
   legMode: '01' | 'cricket' | null
   match: MatchState | null
+  openingCork: OpeningCorkState | null
   players: Player[]
   active: number
   round: number
@@ -156,16 +159,17 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
     initial,
     legModes: bestOf === 3 ? ['01', 'cricket', 'choice'] : ['01', 'cricket', 'cricket', '01', 'choice'],
     legIndex: 0, legWins: [0, 0], leadRule, stage: 'cork', corkPurpose: 'opening', corkThrows: [], legStarter: 0, choiceOwner: null, choiceAs: null,
+    corkOrder: [0, 1],
   } : null
   const gameMode = mode === 'cricket' || mode === 'robo' && roboMode === 'cricket' ? 'cricket' : '01'
   const practiceStart = practiceMode === 'half-it' ? 40 : 0
   const players = newPlayers(names, mode === 'practice' ? practiceStart : initial, gameMode)
   const game: Game = {
     id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [],
-    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, bull: gameBull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
+    mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, openingCork: mode !== 'practice' && mode !== 'match' && players.length === 2 ? { throws: [], order: [0, 1], attempt: 1 } : null, bull: gameBull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
     players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
-    message: mode === 'match' ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
+    message: mode === 'match' || mode !== 'practice' && players.length === 2 ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
   }
   return game
 }
@@ -189,7 +193,7 @@ export function advanceMatchLeg(game: Game): Game {
   match.legIndex++
   const nextMode = match.legModes[match.legIndex]
   if (nextMode === 'choice') {
-    match.stage = 'cork'; match.corkPurpose = 'choice'; match.corkThrows = []; match.choiceOwner = null; match.choiceAs = null
+    match.stage = 'cork'; match.corkPurpose = 'choice'; match.corkThrows = []; match.corkOrder = [0, 1]; match.choiceOwner = null; match.choiceAs = null
     return { ...game, match, finished: false, winner: null, throws: [], active: 0, message: `LEG ${match.legIndex + 1} · CORK FOR CHOICE` }
   }
   const starter = match.leadRule === 'alternate' ? 1 - match.legStarter : 1 - (game.winner ?? 0)
@@ -217,19 +221,43 @@ export function resolveMatchCoinToss(game: Game, winner: number): Game {
 
 function corkRank(hit: Hit): number {
   if (hit.base === 25) return hit.ratio === 2 ? 0 : 1
-  if (hit.base === 0) return 5
-  return hit.ratio === 3 ? 2 : hit.ratio === 1 ? 3 : 4
+  return 2
 }
 export function throwCork(game: Game, hit: Hit): Game {
   const match = game.match
   if (!match || match.stage !== 'cork') return game
   const throws = [...match.corkThrows, hit]
   if (throws.length === 1) {
-    return { ...game, match: { ...match, corkThrows: throws }, active: 1, message: `CORK · ${game.players[1].name} THROWS` }
+    const nextPlayer = match.corkOrder[1]
+    return { ...game, match: { ...match, corkThrows: throws }, active: nextPlayer, message: `CORK · ${game.players[nextPlayer].name} THROWS` }
   }
-  const next = { ...game, match: { ...match, corkThrows: throws, stage: 'cork-tie' as const }, active: 1, message: 'CORK · SELECT THE DART CLOSER TO CENTER' }
-  if (corkRank(throws[0]) !== corkRank(throws[1])) return resolveCork({ ...next, match: { ...next.match!, stage: 'cork-tie' } }, corkRank(throws[0]) < corkRank(throws[1]) ? 0 : 1)
-  return next
+  const firstRank = corkRank(throws[0]), secondRank = corkRank(throws[1])
+  if (firstRank !== secondRank) return resolveCork({ ...game, match: { ...match, corkThrows: throws, stage: 'cork-tie' } }, firstRank < secondRank ? match.corkOrder[0] : match.corkOrder[1])
+  const reversed: [number, number] = [match.corkOrder[1], match.corkOrder[0]]
+  return { ...game, match: { ...match, corkThrows: [], corkOrder: reversed }, active: reversed[0], message: `CORK TIE · ${game.players[reversed[0]].name} THROWS FIRST` }
+}
+
+export function throwOpeningCork(game: Game, hit: Hit): Game {
+  const cork = game.openingCork
+  if (!cork || game.finished) return game
+  const throws = [...cork.throws, hit]
+  if (throws.length === 1) {
+    const nextPlayer = cork.order[1]
+    return { ...game, openingCork: { ...cork, throws }, active: nextPlayer, message: `CORK · ${game.players[nextPlayer].name} THROWS` }
+  }
+  const rank = (dart: Hit) => dart.base === 25 ? dart.ratio === 2 ? 0 : 1 : 2
+  const firstRank = rank(throws[0]), secondRank = rank(throws[1])
+  if (firstRank !== secondRank) {
+    const starter = firstRank < secondRank ? cork.order[0] : cork.order[1]
+    return { ...game, openingCork: null, active: starter, turnStart: game.players[starter].score, message: `CORK WON · ${game.players[starter].name} THROWS FIRST` }
+  }
+  const reversed: [number, number] = [cork.order[1], cork.order[0]]
+  return { ...game, openingCork: { throws: [], order: reversed, attempt: cork.attempt + 1 }, active: reversed[0], message: `CORK TIE · ${game.players[reversed[0]].name} THROWS FIRST` }
+}
+
+export function resolveOpeningCoinToss(game: Game, winner: number): Game {
+  if (!game.openingCork || (winner !== 0 && winner !== 1)) return game
+  return { ...game, openingCork: null, active: winner, turnStart: game.players[winner].score, message: `COIN TOSS · ${game.players[winner].name} GOES FIRST` }
 }
 
 export function chooseMatchFirst(game: Game, choice: 'first' | 'game'): Game {
