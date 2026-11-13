@@ -144,6 +144,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const monthOffset = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth(), 1).getDay()
   const recordedDays = new Set(results.flatMap(result => result.created_at ? [localDateKey(new Date(result.created_at))] : []))
   const selectedResults = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) === selectedDay)
+  const dailyGames = [...selectedResults].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
   const dailyAverage = (mode: SavedResult['mode'], field: 'stats' | 'stats_100') => {
     const games = selectedResults.filter(result => result.mode === mode && typeof result[field] === 'number' && Number.isFinite(result[field]))
     return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
@@ -192,6 +193,18 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
           <article className="day-metric"><small>CRICKET · 80%</small><strong>{dailyAverage('cricket','stats')?.toFixed(2) ?? '—'}</strong><span>MPR</span></article>
           <article className="day-metric count-up-metric"><small>COUNT-UP · 平均スコア</small><strong>{countUpScoreAverage?.toFixed(0) ?? '—'}</strong><span>{countUpRoundAverage === null ? '8ラウンド平均 —' : `1ラウンド平均 ${countUpRoundAverage.toFixed(1)}`} · {countUpGames.length}ゲーム</span></article>
         </div>
+        <section className="daily-game-history" aria-label="この日のゲーム履歴">
+          <h4>この日のゲーム</h4>
+          {dailyGames.length ? <ul>{dailyGames.map(result => {
+            const modeLabel = result.mode === '01' ? '01' : result.mode === 'cricket' ? 'CRICKET' : 'COUNT-UP'
+            const statsLabel = result.mode === '01' ? 'PPR' : result.mode === 'cricket' ? 'MPR' : 'AVG / ROUND'
+            const playedAt = result.created_at ? new Date(result.created_at) : null
+            return <li key={result.game_id}>
+              <div className="daily-game-heading"><time>{playedAt?.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) ?? '時刻不明'}</time><strong>{modeLabel}</strong><span className={result.won ? 'game-result won' : 'game-result'}>{result.won ? 'WIN' : 'LOSE'}</span></div>
+              <div className="daily-game-stats"><span>80% <b>{result.stats.toFixed(2)}</b> {statsLabel}</span>{result.stats_100 != null && <span>100% <b>{result.stats_100.toFixed(2)}</b> {statsLabel}</span>}{result.mode === 'count-up' && result.score != null && <span>SCORE <b>{result.score}</b></span>}</div>
+            </li>
+          })}</ul> : <p>この日の試合記録はありません。</p>}
+        </section>
         {hasUnbackfilledStats && <p className="stats-history-note">100%スタッツの保存開始前の記録は、元データがないため表示できません。新しいゲームから表示されます。</p>}
       </div>
     </section> : <p className="stats-calendar-login">Googleログインすると、プレイ履歴を日付ごとに確認できます。</p>}
