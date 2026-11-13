@@ -780,6 +780,7 @@ export const Example = () => {
     <header className="topbar">
       <button className="wordmark" onClick={goHome}><span className="mark">D</span><span>DARTS<small>ROOM</small></span></button>
       <div className="header-actions"><div className="board-status"><span className={`status-dot ${connected ? 'online' : searchingForBoard ? 'searching' : ''}`} /><span>{connected ? 'DARTSLIVE HOME 接続中' : searchingForBoard ? 'DARTSLIVE HOMEを検索中' : 'ボード未接続'}</span><button className="connect-button" disabled={connecting} onClick={connected || searchingForBoard ? disconnect : connect}>{connecting ? '接続先を選択中…' : connected ? '切断' : searchingForBoard ? '検索停止' : 'Bluetooth接続'}</button></div>
+        <button className="login-button" onClick={() => setAccountOpen(true)}>{googleDisplayName ? 'アカウント' : 'ログイン'}</button>
         <button className="account-toggle" onClick={() => setAccountOpen(true)} aria-label="アカウントとRTを開く" title="アカウントとRT" aria-expanded={accountOpen} aria-controls="account-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
     </header>
     {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError('')}>閉じる</button></div>}
