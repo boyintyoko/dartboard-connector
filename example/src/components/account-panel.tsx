@@ -137,6 +137,8 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     else { setUser(null); setResults([]); setStatus(''); setError('') }
   }
   const summary = summarizeRating(results)
+  const countUpResults = results.filter(result => result.mode === 'count-up' && typeof result.score === 'number')
+  const countUpAverage = countUpResults.length ? countUpResults.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpResults.length : null
   const displayedMonth = visibleMonth ? dateFromKey(`${visibleMonth}-01`) : new Date()
   const daysInMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + 1, 0).getDate()
   const monthOffset = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth(), 1).getDay()
@@ -163,7 +165,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}{ready && client && !googleEnabled && !user && <small>Googleログイン準備中</small>}
     </div>
     <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(1) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム` : 'ログインして対人成績を記録'}</small></div>
-    <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span></div>
+    <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span><span>COUNT-UP <b>{countUpAverage?.toFixed(0) ?? '—'}</b></span></div>
     {user ? <section className="stats-calendar" aria-label="日別スタッツ">
       <header className="stats-calendar-heading"><div><span className="kicker">PLAY HISTORY</span><h3>日別スタッツ</h3></div><div className="calendar-month-nav"><button onClick={() => changeMonth(-1)} aria-label="前の月">←</button><strong>{monthTitle}</strong><button onClick={() => changeMonth(1)} aria-label="次の月">→</button></div></header>
       <div className="calendar-grid" role="grid" aria-label={monthTitle}>
