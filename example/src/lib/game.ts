@@ -241,11 +241,11 @@ export function chooseMatchFirst(game: Game, choice: 'first' | 'game'): Game {
   match.stage = 'choice'
   return { ...game, match, active: choice === 'first' ? 1 - owner : owner, message: choice === 'first' ? 'OPPONENT CHOOSES THE GAME' : `${game.players[owner].name} CHOOSES THE GAME` }
 }
-export function chooseMatchGame(game: Game, legMode: '01' | 'cricket', initial: number): Game {
+export function chooseMatchGame(game: Game, legMode: '01' | 'cricket'): Game {
   if (!game.match || game.match.stage !== 'choice' || !game.match.choiceAs) return game
   const match = { ...game.match, legWins: [...game.match.legWins] as [number, number], legModes: [...game.match.legModes] }
   match.legModes[match.legIndex] = 'choice'
-  return resetLeg({ ...game, match }, legMode, match.legStarter, initial)
+  return resetLeg({ ...game, match }, legMode, match.legStarter, match.initial)
 }
 
 export function throwDart(game: Game, hit: Hit): Game {

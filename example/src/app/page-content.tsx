@@ -466,7 +466,7 @@ export const Example = () => {
       ? chooseMatchFirst(game, value as 'first' | 'game')
       : type === 'cork-winner'
         ? resolveCork(game, value as number)
-        : chooseMatchGame(game, value as '01' | 'cricket', initial)
+        : chooseMatchGame(game, value as '01' | 'cricket')
     commitGame(game, next)
   }
   const receive = useCallback((signal: BoardSignal) => {
@@ -516,7 +516,8 @@ export const Example = () => {
       historyRef.current = []
       setHistory([])
       if (match.seat === 0) {
-        const initialGame = createGame(match.mode, match.players, 501, bull, outRule, practiceTarget, matchBestOf, matchLeadRule)
+        const isOnlineMedley = match.mode === 'match'
+        const initialGame = createGame(match.mode, match.players, isOnlineMedley ? 701 : 501, bull, isOnlineMedley ? 'open' : outRule, practiceTarget, isOnlineMedley ? 3 : matchBestOf, matchLeadRule)
         const next = match.mode === 'match'
           ? resolveMatchCoinToss(initialGame, Math.random() < 0.5 ? 0 : 1)
           : { ...initialGame, message: `COIN TOSS · ${initialGame.players[0].name} GOES FIRST` }
@@ -580,7 +581,7 @@ export const Example = () => {
       } else if (previous.mode === 'match' && (request.decision === 'first' || request.decision === 'choose')) {
         commitGame(previous, chooseMatchFirst(previous, request.value as 'first' | 'game'))
       } else if (previous.mode === 'match') {
-        commitGame(previous, chooseMatchGame(previous, request.value as '01' | 'cricket', 501))
+        commitGame(previous, chooseMatchGame(previous, request.value as '01' | 'cricket'))
       }
     })
     socket.on('match:opponent-left', () => {
@@ -642,7 +643,7 @@ export const Example = () => {
       if (previous.mode === 'match' && previous.match?.stage === 'choice') {
         const next = previous.match.choiceAs === null
           ? chooseMatchFirst(previous, Math.random() < 0.5 ? 'first' : 'game')
-          : chooseMatchGame(previous, Math.random() < 0.5 ? '01' : 'cricket', previous.match.initial)
+          : chooseMatchGame(previous, Math.random() < 0.5 ? '01' : 'cricket')
         commitGame(previous, next)
         return
       }
