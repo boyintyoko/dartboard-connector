@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
 import type { Game } from '../lib/game'
-import { summarizeRating, type SavedResult } from '../lib/rating'
+import { ratingLevel, summarizeRating, type SavedResult } from '../lib/rating'
 
 type PendingResult = SavedResult & { user_id: string }
 const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -144,12 +144,16 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const monthOffset = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth(), 1).getDay()
   const recordedDays = new Set(results.flatMap(result => result.created_at ? [localDateKey(new Date(result.created_at))] : []))
   const selectedResults = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) === selectedDay)
-  const resultsUpToDay = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) <= selectedDay)
-  const dayRating = summarizeRating(resultsUpToDay)
   const dailyAverage = (mode: SavedResult['mode'], field: 'stats' | 'stats_100') => {
     const games = selectedResults.filter(result => result.mode === mode && typeof result[field] === 'number' && Number.isFinite(result[field]))
     return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
   }
+  const day01 = dailyAverage('01', 'stats')
+  const dayCricket = dailyAverage('cricket', 'stats')
+  const dayLevels = [day01 === null ? null : ratingLevel('01', day01), dayCricket === null ? null : ratingLevel('cricket', dayCricket)].filter((level): level is number => level !== null)
+  const dayRt = dayLevels.length ? dayLevels.reduce((sum, level) => sum + level, 0) / dayLevels.length : null
+  const dayFlight = dayRt === null ? '—' : dayRt >= 16 ? 'SA' : dayRt >= 13 ? 'AA' : dayRt >= 10 ? 'A' : dayRt >= 8 ? 'BB' : dayRt >= 6 ? 'B' : dayRt >= 4 ? 'CC' : 'C'
+  const hasUnbackfilledStats = selectedResults.some(result => (result.mode === '01' || result.mode === 'cricket') && result.stats_100 == null)
   const countUpGames = selectedResults.filter(result => result.mode === 'count-up')
   const countUpScoreAverage = countUpGames.length ? countUpGames.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpGames.length : null
   const countUpRoundAverage = dailyAverage('count-up', 'stats')
@@ -180,7 +184,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       </div>
       <div className="day-stats">
         <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{selectedResults.length} ゲーム</small></div>
-        <article className="day-rating"><small>この日時点のRT</small><strong>{dayRating.rating?.toFixed(1) ?? '—'} <em>{dayRating.flight}</em></strong><span>{dayRating.rating === null ? 'RT算出には01・CRを含む10ゲームが必要' : `直近${dayRating.count}ゲームの参考RT`}</span></article>
+        <article className="day-rating"><small>この日の参考RT</small><strong>{dayRt?.toFixed(1) ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '当日の01・CRスタッツから算出' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}スタッツから仮算出` : 'この日に01またはCRの記録がありません'}</span></article>
         <div className="day-metric-grid">
           <article className="day-metric"><small>01 · 100%</small><strong>{dailyAverage('01','stats_100')?.toFixed(2) ?? '—'}</strong><span>PPR · {selectedResults.filter(row => row.mode === '01').length}ゲーム</span></article>
           <article className="day-metric"><small>01 · 80%</small><strong>{dailyAverage('01','stats')?.toFixed(2) ?? '—'}</strong><span>PPR</span></article>
@@ -188,6 +192,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
           <article className="day-metric"><small>CRICKET · 80%</small><strong>{dailyAverage('cricket','stats')?.toFixed(2) ?? '—'}</strong><span>MPR</span></article>
           <article className="day-metric count-up-metric"><small>COUNT-UP · 平均スコア</small><strong>{countUpScoreAverage?.toFixed(0) ?? '—'}</strong><span>{countUpRoundAverage === null ? '8ラウンド平均 —' : `1ラウンド平均 ${countUpRoundAverage.toFixed(1)}`} · {countUpGames.length}ゲーム</span></article>
         </div>
+        {hasUnbackfilledStats && <p className="stats-history-note">100%スタッツの保存開始前の記録は、元データがないため表示できません。新しいゲームから表示されます。</p>}
       </div>
     </section> : <p className="stats-calendar-login">Googleログインすると、プレイ履歴を日付ごとに確認できます。</p>}
     {status && <p className="account-message" role="status">{status}</p>}{error && <p className="account-error" role="alert">{error} <button onClick={() => setRefresh(value => value + 1)}>再試行</button></p>}
