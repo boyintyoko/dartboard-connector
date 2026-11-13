@@ -169,6 +169,13 @@ export const Example = () => {
   const localVideo = useRef<HTMLVideoElement | null>(null)
   const remoteVideo = useRef<HTMLVideoElement | null>(null)
   const [screen, setScreen] = useState<'home' | 'setup' | 'game'>('home')
+  const [idleScreen, setIdleScreen] = useState(false)
+  const idleTimer = useRef<number | null>(null)
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimer.current !== null) window.clearTimeout(idleTimer.current)
+    setIdleScreen(false)
+    idleTimer.current = window.setTimeout(() => setIdleScreen(true), 10 * 60 * 1000)
+  }, [])
   const [mode, setMode] = useState<Mode>('01')
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -217,6 +224,17 @@ export const Example = () => {
   const [dismissedAward, setDismissedAward] = useState<string | null>(null)
   const awardPlaying = !!game?.award && game.award.id !== dismissedAward
   const awardPlayingRef = useRef(false); awardPlayingRef.current = awardPlaying
+  useEffect(() => {
+    resetIdleTimer()
+    const onActivity = () => resetIdleTimer()
+    window.addEventListener('pointerdown', onActivity)
+    window.addEventListener('keydown', onActivity)
+    return () => {
+      window.removeEventListener('pointerdown', onActivity)
+      window.removeEventListener('keydown', onActivity)
+      if (idleTimer.current !== null) window.clearTimeout(idleTimer.current)
+    }
+  }, [resetIdleTimer, game, screen])
   useEffect(() => {
     const award = game?.award
     if (!award) return
@@ -712,6 +730,7 @@ export const Example = () => {
 
   return <main className="app-shell">
     {awardPlaying && game?.award && <AwardMovie key={game.award.id} award={game.award} onSkip={() => setDismissedAward(game.award!.id)}/>}
+    {idleScreen && <div className="idle-screen" role="button" tabIndex={0} aria-label="画面をタップして復帰" onPointerDown={event => { event.stopPropagation(); resetIdleTimer() }} onKeyDown={event => { event.stopPropagation(); resetIdleTimer() }} onClick={event => { event.stopPropagation(); resetIdleTimer() }}><span>画面をタップして復帰</span></div>}
     {exitConfirmOpen && <div className="exit-confirm-layer">
       <button className="exit-confirm-backdrop" aria-label="ゲームに戻る" onClick={() => setExitConfirmOpen(false)} />
       <section className="exit-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-description" onKeyDown={event => { if (event.key === 'Escape') setExitConfirmOpen(false) }}>

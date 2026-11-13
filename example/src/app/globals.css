@@ -148,6 +148,7 @@
 }
 
 /* Distance readable Cricket marks for monitor play. */
+.idle-screen{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#000;color:#252a30;cursor:pointer;user-select:none;touch-action:manipulation}.idle-screen span{font:600 11px 'Barlow Condensed',sans-serif;letter-spacing:2px}
 .cricket-score{margin-bottom:10px}
 .cricket-score thead{font-size:12px}
 .cricket-score tbody th{font:700 clamp(17px,1.4vw,22px) 'Barlow Condensed',sans-serif}
