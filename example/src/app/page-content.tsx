@@ -32,7 +32,7 @@ function GameResults({ game }: { game: Game }) {
   const cricket = game.mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
   const practice = game.mode === 'practice'
   const practiceHitOnly = practice && (game.practiceMode === 'target' || game.practiceMode === 'eagles-eye')
-  const match = game.mode === 'match' && game.match
+  const match = game.mode === 'match' ? game.match : null
   const legComplete = match?.stage === 'leg-finished'
   const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
   const practiceSummary = (player: Game['players'][number]) => practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score
