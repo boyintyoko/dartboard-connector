@@ -630,11 +630,23 @@ export const Example = () => {
       const level = difficulty === 'HARD' ? 0.68 : difficulty === 'NORMAL' ? 0.43 : 0.2
       const cricket = previous.mode === 'cricket' || (previous.mode === 'match' || previous.mode === 'robo') && previous.legMode === 'cricket'
       const own = previous.players[1], opponent = previous.players[0]
+      const ownOpenTargets = targets.filter(number => (own.marks[number] || 0) < 3)
+      const opponentOpenTargets = targets.filter(number => (opponent.marks[number] || 0) < 3)
       const target = cricket
-        ? targets.find(number => (own.marks[number] || 0) < 3 || (opponent.marks[number] || 0) < 3 && own.score < opponent.score) ?? 20
+        ? ownOpenTargets.find(number => (opponent.marks[number] || 0) < 3)
+          ?? (own.score < opponent.score ? opponentOpenTargets[0] : undefined)
+          ?? ownOpenTargets[0]
+          ?? opponentOpenTargets[0]
+          ?? 20
         : 20
       const canHit = Math.random() < level
-      const ratio = target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
+      const ownMarks = own.marks[target] || 0
+      const targetOpenForOpponent = (opponent.marks[target] || 0) < 3
+      const ratio = cricket
+        ? ownMarks >= 3 || own.score < opponent.score && targetOpenForOpponent
+          ? target === 25 ? 2 : 3
+          : Math.min(target === 25 ? 2 : 3, Math.max(1, 3 - ownMarks))
+        : target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
       const aim = roboAim(previous)
       const hit: Hit = cricket
         ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
