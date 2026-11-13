@@ -14,6 +14,7 @@ const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: 
   { id: 'match', title: 'MATCH', subtitle: '01・CR・CHのメドレー', icon: '☆', accent: 'orange' },
   { id: 'robo', title: 'ROBO MATCH', subtitle: 'CPUと対戦', icon: '♙', accent: 'purple' },
 ]
+const onlineModes = [{ id: '01', title: '01', detail: 'ゼロワン', info: '701 · OPEN OUT' }, { id: 'cricket', title: 'CR', detail: 'STANDARD CRICKET', info: '15 · 16 · 17 · 18 · 19 · 20 · BULL' }, { id: 'match', title: 'MATCH', detail: 'MEDLEY', info: '701 · OPEN OUT · 01 → CR → CH' }, { id: 'random', title: 'RANDOM', detail: 'ANY GAME', info: '対戦相手とランダムなゲームでマッチ' }] as const
 const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 type MatchSignal = { type: 'offer' | 'answer'; description: RTCSessionDescriptionInit } | { type: 'candidate'; candidate: RTCIceCandidateInit }
 const isRoboGame = (game: Game) => game.players[1]?.name.startsWith('ROBO ·') === true
@@ -168,7 +169,7 @@ export const Example = () => {
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([])
   const localVideo = useRef<HTMLVideoElement | null>(null)
   const remoteVideo = useRef<HTMLVideoElement | null>(null)
-  const [screen, setScreen] = useState<'home' | 'setup' | 'game'>('home')
+  const [screen, setScreen] = useState<'home' | 'setup' | 'online-select' | 'online-search' | 'game'>('home')
   const [idleScreen, setIdleScreen] = useState(false)
   const idleTimer = useRef<number | null>(null)
   const resetIdleTimer = useCallback(() => {
@@ -212,7 +213,6 @@ export const Example = () => {
   const onlineStatusRef = useRef(onlineStatus)
   onlineStatusRef.current = onlineStatus
   const [onlineMode, setOnlineMode] = useState<'01' | 'cricket' | 'match' | 'random'>('random')
-  const [onlineSelectionOpen, setOnlineSelectionOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false)
   const [onlineSeat, setOnlineSeat] = useState<number | null>(null)
@@ -477,17 +477,22 @@ export const Example = () => {
     if (previous && result.applied && result.game) applyRef.current(signal.type === 'segment' ? signal : 'next')
   }, [])
 
+  const cancelOnlineSearch = () => {
+    if (onlineStatusRef.current === 'searching') onlineSocket.current?.emit('queue:leave')
+    onlineSocket.current?.disconnect()
+    onlineSocket.current = null
+    setOnlineSeat(null)
+    onlineSeatRef.current = null
+    onlineStatusRef.current = 'offline'
+    setOnlineStatus('offline')
+  }
   const findOnlineOpponent = () => {
-    if (onlineStatus === 'searching') {
-      onlineSocket.current?.emit('queue:leave')
-      onlineSocket.current?.disconnect()
-      onlineSocket.current = null
-      setOnlineSeat(null)
-      onlineSeatRef.current = null
-      onlineStatusRef.current = 'offline'
-      setOnlineStatus('offline')
+    if (onlineStatusRef.current === 'connecting' || onlineStatusRef.current === 'searching') {
+      cancelOnlineSearch()
+      setScreen('online-select')
       return
     }
+    setScreen('online-search')
     setError('')
     onlineStatusRef.current = 'connecting'
     setOnlineStatus('connecting')
@@ -507,7 +512,6 @@ export const Example = () => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
       onlineStatusRef.current = 'matched'
       setOnlineStatus('matched')
-      setOnlineSelectionOpen(false)
       void ensurePeerConnection().then(() => match.seat === 0 ? makeVideoOffer() : undefined).catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
       setMode(match.mode)
       setCount(2)
@@ -571,10 +575,9 @@ export const Example = () => {
         onlineSocket.current?.emit('match:state', previous)
         return
       }
-      let next: Game
       if (request.type === 'throw') {
         const action = request.action!
-        next = 'type' in action ? nextTurn(previous) : previous.mode === 'match' && previous.match?.stage === 'cork' ? throwCork(previous, action) : throwDart(previous, action)
+        const next = 'type' in action ? nextTurn(previous) : previous.mode === 'match' && previous.match?.stage === 'cork' ? throwCork(previous, action) : throwDart(previous, action)
         commitGame(previous, next, 'type' in action ? undefined : action)
       } else if (previous.mode === 'match' && request.decision === 'cork-winner') {
         commitGame(previous, resolveCork(previous, request.value as number))
@@ -726,7 +729,7 @@ export const Example = () => {
     if (gameMode !== mode) setMode(gameMode)
     gameRef.current = next; setGame(next); historyRef.current = []; setHistory([]); setScreen('game')
   }
-  const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); historyRef.current = []; setHistory([]); setScreen('home') }
+  const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null } else if (onlineStatus === 'connecting' || onlineStatus === 'searching') cancelOnlineSearch(); gameRef.current = null; setGame(null); historyRef.current = []; setHistory([]); setScreen('home') }
   const goHome = () => { if (screen === 'game' && game && !game.finished) { setExitConfirmOpen(true); return }; leaveGameForHome() }
   const advanceLeg = () => {
     const previous = gameRef.current
@@ -767,17 +770,20 @@ export const Example = () => {
     {screen === 'home' && <>
       <section className="mode-section lobby"><div className="section-heading"><div><span className="kicker">DARTS ROOM / PLAY</span><h1>GAME SELECT</h1></div><p>ゲームを選んでスタート</p></div>
         <div className="game-grid">{modes.map(item => <button key={item.id} className={`game-card ${item.accent}`} disabled={onlineStatus === 'connecting' || onlineStatus === 'searching'} onClick={() => selectMode(item.id)}><span className="card-icon">{item.icon}</span><span className="card-arrow">↗</span><span className="card-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span></button>)}
-          <button className="game-card online-card" onClick={() => onlineStatus === 'searching' ? findOnlineOpponent() : setOnlineSelectionOpen(open => !open)} disabled={onlineStatus === 'connecting'} aria-expanded={onlineSelectionOpen} aria-label={onlineStatus === 'searching' ? 'オンライン対戦をキャンセル' : 'オンライン対戦のゲームモードを選ぶ'}><span className="card-icon">◎</span><span className="card-arrow">{onlineStatus === 'searching' ? '×' : '↗'}</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>{onlineStatus === 'connecting' ? 'サーバーに接続中…' : onlineStatus === 'searching' ? '対戦相手を検索中 · タップでキャンセル' : onlineSelectionOpen ? 'ゲームモードを選択してください' : '01・CR・MATCH・RANDOM'}</small></span></button>
+          <button className="game-card online-card" onClick={() => { setError(''); setScreen('online-select') }} aria-label="オンライン対戦のゲームモードを選ぶ"><span className="card-icon">◎</span><span className="card-arrow">↗</span><span className="card-copy"><strong>ONLINE MATCH</strong><small>01・CR・MATCH・RANDOM</small></span></button>
         </div>
-        {onlineSelectionOpen && <div className="online-mode-panel">
-          <div className="online-mode-heading"><div><strong>オンライン対戦モード</strong><small>01・CR・MATCHは同じ種目の相手と対戦。RANDOMならどの種目でも対戦できます。</small></div></div>
-          <div className="online-mode-options" role="group" aria-label="オンライン対戦モード">
-            {([{ id: '01', title: '01', detail: 'ゼロワン' }, { id: 'cricket', title: 'CR', detail: 'クリケット' }, { id: 'match', title: 'MATCH', detail: 'メドレー' }, { id: 'random', title: 'RANDOM', detail: 'どのモードともマッチ' }] as const).map(option => <button key={option.id} className={onlineMode === option.id ? 'chosen' : ''} aria-pressed={onlineMode === option.id} disabled={onlineStatus === 'connecting' || onlineStatus === 'searching'} onClick={() => setOnlineMode(option.id)}><strong>{option.title}</strong><small>{option.detail}</small></button>)}
-          </div>
-          <button className="online-search-button" onClick={findOnlineOpponent} disabled={onlineStatus === 'connecting'}>{onlineStatus === 'searching' ? '検索をキャンセル' : onlineStatus === 'connecting' ? '接続中…' : '対戦相手を検索'} <span>→</span></button>
-        </div>}
       </section>
     </>}
+    {screen === 'online-select' && <section className="online-select-view">
+      <div className="dl3-progress" aria-label="オンライン対戦の進行状況"><span className="done">HOME</span><i/><span className="current">GAME SELECT</span><i/><span>PLAYER SELECT</span><i/><span>GAME START</span></div>
+      <div className="online-select-heading"><button className="back-link" onClick={() => setScreen('home')}>← HOME</button><div className="online-title-copy"><span className="kicker">ONLINE MATCH · STEP 1</span><h1>GAME SELECT</h1><p>対戦するゲームを選んでください。</p></div></div>
+      <div className="online-choice-list" role="group" aria-label="オンライン対戦ゲーム選択">{onlineModes.map(option => <button key={option.id} className={`online-choice ${onlineMode === option.id ? 'chosen' : ''}`} aria-pressed={onlineMode === option.id} onClick={() => setOnlineMode(option.id)}><span className="online-choice-icon">{option.id === '01' ? '01' : option.id === 'cricket' ? '⊗' : option.id === 'match' ? '☆' : '◎'}</span><span className="online-choice-copy"><strong>{option.title}</strong><small>{option.detail}</small></span><span className="online-choice-info">{option.info}</span><span className="online-choice-check">{onlineMode === option.id ? '●' : '○'}</span></button>)}</div>
+      <div className="online-select-footer"><p>{onlineMode === 'match' ? 'MATCH · 701 OPEN OUT / 01 → CR → CH' : onlineMode === 'random' ? '対戦相手が見つかるとゲームモードが決まります。' : onlineModes.find(option => option.id === onlineMode)?.info}</p><button className="primary-button" onClick={findOnlineOpponent}>NEXT <span>→</span></button></div>
+    </section>}
+    {screen === 'online-search' && <section className="online-search-view">
+      <div className="dl3-progress" aria-label="オンライン対戦の進行状況"><span className="done">HOME</span><i/><span className="done">GAME SELECT</span><i/><span className="current">PLAYER SELECT</span><i/><span>GAME START</span></div>
+      <div className="online-search-center"><div className={`match-search-orbit ${onlineStatus === 'offline' ? 'search-failed' : ''}`}><span>{onlineStatus === 'offline' ? '!' : '◎'}</span></div><span className="kicker">ONLINE MATCH · STEP 2</span><h1>{onlineStatus === 'connecting' ? 'CONNECTING' : onlineStatus === 'searching' ? 'SEARCHING FOR OPPONENT' : 'CONNECTION FAILED'}</h1><p>{onlineStatus === 'connecting' ? 'マッチングサーバーへ接続しています…' : onlineStatus === 'searching' ? '対戦相手を探しています。見つかるまでこの画面でお待ちください。' : 'サーバーに接続できませんでした。接続を確認して再試行してください。'}</p><div className="search-mode-summary"><small>SELECTED GAME</small><strong>{onlineModes.find(option => option.id === onlineMode)?.title}</strong><span>{onlineModes.find(option => option.id === onlineMode)?.info}</span></div><div className="online-search-actions">{onlineStatus === 'offline' ? <button className="primary-button" onClick={findOnlineOpponent}>RETRY <span>↻</span></button> : <button className="search-cancel-button" onClick={() => { cancelOnlineSearch(); setScreen('online-select') }}>CANCEL SEARCH</button>}<button className="search-back-link" onClick={() => { if (onlineStatus === 'connecting' || onlineStatus === 'searching') cancelOnlineSearch(); setScreen('online-select') }}>← GAME SELECT</button></div></div>
+    </section>}
     <div className="account-drawer-layer" hidden={!accountOpen}>
       <button className="account-drawer-backdrop" aria-label="アカウントパネルを閉じる" onClick={() => setAccountOpen(false)} />
       <aside id="account-drawer" className="account-drawer" role="dialog" aria-modal="true" aria-label="アカウントとRT" onKeyDown={event => { if (event.key === 'Escape') setAccountOpen(false) }}>
