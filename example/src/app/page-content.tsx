@@ -166,6 +166,7 @@ export const Example = () => {
   const peerConnectionPending = useRef<Promise<RTCPeerConnection> | null>(null)
   const videoOfferRetry = useRef<number | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const cameraAutoStartRef = useRef(true)
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([])
   const localVideo = useRef<HTMLVideoElement | null>(null)
   const remoteVideo = useRef<HTMLVideoElement | null>(null)
@@ -222,11 +223,17 @@ export const Example = () => {
   const [videoConnectionState, setVideoConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
   const [relayConfigured, setRelayConfigured] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [cameraAutoStart, setCameraAutoStart] = useState(true)
   const [dismissedAward, setDismissedAward] = useState<string | null>(null)
   const awardPlaying = !!game?.award && game.award.id !== dismissedAward
   const awardPlayingRef = useRef(false); awardPlayingRef.current = awardPlaying
   useEffect(() => {
     resetIdleTimer()
+    try {
+      const enabled = localStorage.getItem('darts-room-camera-auto-start') !== 'false'
+      cameraAutoStartRef.current = enabled
+      setCameraAutoStart(enabled)
+    } catch { /* Keep automatic camera enabled for this session. */ }
     const onActivity = () => resetIdleTimer()
     window.addEventListener('pointerdown', onActivity)
     window.addEventListener('keydown', onActivity)
@@ -346,17 +353,14 @@ export const Example = () => {
     setRelayConfigured(false)
     setCameraError('')
   }
-  const toggleCamera = async () => {
+  const setCameraAutoStartPreference = (enabled: boolean) => {
+    cameraAutoStartRef.current = enabled
+    setCameraAutoStart(enabled)
+    try { localStorage.setItem('darts-room-camera-auto-start', String(enabled)) } catch { /* Session preference still applies. */ }
+  }
+  const startCamera = async () => {
+    if (localStreamRef.current) return
     setCameraError('')
-    if (localStreamRef.current) {
-      const peer = peerConnection.current
-      const sender = peer?.getSenders().find(item => item.track?.kind === 'video')
-      try { await sender?.replaceTrack(null) } catch { /* The peer may already have closed. */ }
-      localStreamRef.current.getTracks().forEach(track => track.stop())
-      localStreamRef.current = null
-      setLocalStream(null)
-      return
-    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' }, audio: false })
       const track = stream.getVideoTracks()[0]
@@ -367,8 +371,7 @@ export const Example = () => {
       else peer.addTrack(track, stream)
       localStreamRef.current = stream
       setLocalStream(stream)
-      if (onlineSeatRef.current === 0) requestVideoOffer()
-      else onlineSocket.current?.emit('match:action', { type: 'video-offer' })
+      if (onlineSeatRef.current === 1) onlineSocket.current?.emit('match:action', { type: 'video-offer' })
     } catch (cause) {
       const reason = cause instanceof Error ? `${cause.name} ${cause.message}` : ''
       if (/permission|denied|dismissed|notallowed/i.test(reason)) {
@@ -379,6 +382,16 @@ export const Example = () => {
         setCameraError(cause instanceof Error ? `カメラを開始できませんでした: ${cause.message}` : 'カメラを開始できませんでした。ブラウザーのカメラ許可をご確認ください。')
       }
     }
+  }
+  const toggleCamera = async () => {
+    setCameraError('')
+    if (!localStreamRef.current) { await startCamera(); return }
+    const peer = peerConnection.current
+    const sender = peer?.getSenders().find(item => item.track?.kind === 'video')
+    try { await sender?.replaceTrack(null) } catch { /* The peer may already have closed. */ }
+    localStreamRef.current.getTracks().forEach(track => track.stop())
+    localStreamRef.current = null
+    setLocalStream(null)
   }
 
   const playSound = useCallback((hit: Hit) => {
@@ -512,7 +525,11 @@ export const Example = () => {
       setOnlineSeat(match.seat); onlineSeatRef.current = match.seat
       onlineStatusRef.current = 'matched'
       setOnlineStatus('matched')
-      void ensurePeerConnection().then(() => match.seat === 0 ? makeVideoOffer() : undefined).catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
+      void (async () => {
+        await ensurePeerConnection()
+        if (cameraAutoStartRef.current) await startCamera()
+        if (match.seat === 0 && peerConnection.current?.signalingState === 'stable') await makeVideoOffer()
+      })().catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
       setMode(match.mode)
       setCount(2)
       setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
@@ -788,7 +805,7 @@ export const Example = () => {
       <button className="account-drawer-backdrop" aria-label="アカウントパネルを閉じる" onClick={() => setAccountOpen(false)} />
       <aside id="account-drawer" className="account-drawer" role="dialog" aria-modal="true" aria-label="アカウントとRT" onKeyDown={event => { if (event.key === 'Escape') setAccountOpen(false) }}>
         <header className="account-drawer-heading"><div><span className="kicker">PLAYER PROFILE</span><h2>ACCOUNT / RT</h2></div><button onClick={() => setAccountOpen(false)} aria-label="閉じる">×</button></header>
-        <AccountPanel game={game} seat={onlineSeat} onDisplayName={handleGoogleDisplayName} />
+        <AccountPanel game={game} seat={onlineSeat} onDisplayName={handleGoogleDisplayName} cameraAutoStart={cameraAutoStart} onCameraAutoStart={setCameraAutoStartPreference} />
       </aside>
     </div>
 

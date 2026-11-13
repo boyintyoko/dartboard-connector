@@ -7,7 +7,7 @@ import { summarizeRating, type SavedResult } from '../lib/rating'
 
 type PendingResult = SavedResult & { user_id: string }
 
-export function AccountPanel({ game, seat, onDisplayName }: { game: Game | null; seat: number | null; onDisplayName: (name: string | null) => void }) {
+export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCameraAutoStart }: { game: Game | null; seat: number | null; onDisplayName: (name: string | null) => void; cameraAutoStart: boolean; onCameraAutoStart: (enabled: boolean) => void }) {
   const [client, setClient] = useState<SupabaseClient | null>(null)
   const [ready, setReady] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
@@ -115,6 +115,7 @@ export function AccountPanel({ game, seat, onDisplayName }: { game: Game | null;
   }
   const summary = summarizeRating(results)
   return <section className="account-panel" aria-label="アカウントとレーティング">
+    <div className="account-camera-setting"><div><span className="kicker">ONLINE VIDEO</span><strong>カメラ設定</strong><small>マッチ成立時に自動でカメラをオンにします。マイク音声は共有しません。</small></div><label><input type="checkbox" checked={cameraAutoStart} onChange={event => onCameraAutoStart(event.target.checked)} /> 自動でオン</label></div>
     <div className="account-identity"><span className="kicker">MY ACCOUNT</span><strong>{user ? user.user_metadata.full_name || user.email || 'PLAYER' : 'ゲスト'}</strong>
       {user ? <button onClick={() => void logout()}>ログアウト</button> : <button disabled={!client || !ready || !googleEnabled || loginBusy || !!game && !game.finished} onClick={() => void login()}>{loginBusy ? 'Googleへ移動中…' : 'Googleでログイン'}</button>}
       {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}{ready && client && !googleEnabled && !user && <small>Googleログイン準備中</small>}
