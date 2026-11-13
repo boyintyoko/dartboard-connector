@@ -4,7 +4,7 @@ export type OutRule = 'master' | 'double' | 'open'
 export type MatchLegMode = '01' | 'cricket' | 'choice'
 export type MatchLeadRule = 'loser' | 'alternate'
 export type PracticeMode = 'target' | 'count-up' | 'cricket-count-up' | 'eagles-eye' | 'half-it' | 'shoot-out'
-export type MatchStage = 'cork' | 'cork-tie' | 'choice' | 'playing' | 'finished'
+export type MatchStage = 'cork' | 'cork-tie' | 'choice' | 'playing' | 'leg-finished' | 'finished'
 export type Player = { name: string; score: number; marks: Record<number, number>; darts: number; points: number }
 export type MatchState = {
   bestOf: 3 | 5
@@ -178,13 +178,20 @@ function prepareNextLeg(game: Game, winner: number): Game {
     match.stage = 'finished'
     return { ...game, match, finished: true, winner, message: `${game.players[winner].name} WINS THE MATCH` }
   }
+  match.stage = 'leg-finished'
+  return { ...game, match, finished: false, winner, message: `LEG ${match.legIndex + 1} COMPLETE` }
+}
+
+export function advanceMatchLeg(game: Game): Game {
+  if (!game.match || game.match.stage !== 'leg-finished') return game
+  const match = { ...game.match, legWins: [...game.match.legWins] as [number, number], legModes: [...game.match.legModes] }
   match.legIndex++
   const nextMode = match.legModes[match.legIndex]
   if (nextMode === 'choice') {
     match.stage = 'cork'; match.corkPurpose = 'choice'; match.corkThrows = []; match.choiceOwner = null; match.choiceAs = null
     return { ...game, match, finished: false, winner: null, throws: [], active: 0, message: `LEG ${match.legIndex + 1} · CORK FOR CHOICE` }
   }
-  const starter = match.leadRule === 'alternate' ? 1 - match.legStarter : 1 - winner
+  const starter = match.leadRule === 'alternate' ? 1 - match.legStarter : 1 - (game.winner ?? 0)
   return resetLeg({ ...game, match }, nextMode, starter, match.initial)
 }
 

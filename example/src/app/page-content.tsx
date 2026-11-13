@@ -5,7 +5,7 @@ import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AccountPanel } from '../components/account-panel'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Award, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
+import { advanceMatchLeg, chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, roboAim, targets, throwCork, throwDart, type Award, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -33,15 +33,16 @@ function GameResults({ game }: { game: Game }) {
   const practice = game.mode === 'practice'
   const practiceHitOnly = practice && (game.practiceMode === 'target' || game.practiceMode === 'eagles-eye')
   const match = game.mode === 'match' && game.match
+  const legComplete = match?.stage === 'leg-finished'
   const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
   const practiceSummary = (player: Game['players'][number]) => practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score
   return <section className="results-panel" aria-label="ゲーム結果">
-    <header className="results-heading"><div className="kicker">FINAL RESULTS</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small> · FINAL LEG</small></p>}</header>
+    <header className="results-heading"><div className="kicker">{legComplete ? `LEG ${match!.legIndex + 1} RESULTS` : 'FINAL RESULTS'}</div><h2>{game.winner === null ? 'DRAW' : legComplete ? `${game.players[game.winner].name} WON THE LEG` : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small>{legComplete ? ` · LEG ${match.legIndex + 1}` : ' · FINAL MATCH'}</small></p>}</header>
     <div className="results-players">{game.players.map((player, index) => <article className={`result-player ${game.winner === index ? 'winner' : ''}`} key={index}>
       <div className="result-player-heading"><span>P{index + 1}</span><strong>{player.name}</strong><em>{game.winner === index ? 'WINNER' : game.winner === null ? 'DRAW' : 'FINISH'}</em></div>
-      <div className="result-main-score"><small>{practice ? practiceHitOnly ? 'TARGET HITS' : 'FINAL SCORE' : cricket ? game.players.length === 1 ? 'TARGETS CLOSED' : 'CRICKET SCORE' : match ? 'FINAL LEG · REMAINING' : 'REMAINING SCORE'}</small><b>{practice ? practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score : cricket && game.players.length === 1 ? `${closedTargets(player)} / ${targets.length}` : player.score}</b></div>
+      <div className="result-main-score"><small>{practice ? practiceHitOnly ? 'TARGET HITS' : 'FINAL SCORE' : cricket ? game.players.length === 1 ? 'TARGETS CLOSED' : 'CRICKET SCORE' : match ? `${legComplete ? `LEG ${match!.legIndex + 1}` : 'FINAL LEG'} · REMAINING` : 'REMAINING SCORE'}</small><b>{practice ? practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score : cricket && game.players.length === 1 ? `${closedTargets(player)} / ${targets.length}` : player.score}</b></div>
       <div className="result-stats">
-        <div><small>{match ? 'DARTS · FINAL LEG' : 'DARTS THROWN'}</small><strong>{player.darts}</strong></div>
+        <div><small>{match ? `DARTS · LEG ${match.legIndex + 1}` : 'DARTS THROWN'}</small><strong>{player.darts}</strong></div>
         {!practice && game.ratingResults.at(-1) && <div><small>{cricket ? '80% MPR' : '80% PPR'}</small><strong>{game.ratingResults.at(-1)!.stats[index]?.toFixed(2) ?? '—'}</strong></div>}
         {cricket ? <>
           <div><small>TARGETS CLOSED</small><strong>{closedTargets(player)} / {targets.length}</strong></div>
@@ -406,7 +407,7 @@ export const Example = () => {
     let resolved = onlineStatusRef.current === 'matched' && next.mode === 'match' && next.match?.stage === 'cork'
       ? resolveMatchCoinToss(next, Math.random() < 0.5 ? 0 : 1)
       : next
-    const completedOnlineTurn = onlineStatusRef.current === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust)
+    const completedOnlineTurn = onlineStatusRef.current === 'matched' && onlineSeatRef.current === 0 && (resolved.throws.length === 3 || resolved.bust) && resolved.match?.stage !== 'leg-finished'
     if (completedOnlineTurn && !resolved.finished) {
       const award = resolved.award
       resolved = { ...nextTurn(resolved), award }
@@ -610,10 +611,10 @@ export const Example = () => {
     if (remoteStream) void remoteVideo.current.play().catch(() => {})
   }, [remoteStream, remoteVideoActive])
   useEffect(() => {
-    if (awardPlaying || !game || !isRoboGame(game) || game.active !== 1 || game.finished || game.bust || game.throws.length >= 3 || game.match?.stage === 'cork-tie') return
+    if (awardPlaying || !game || !isRoboGame(game) || game.active !== 1 || game.finished || game.match?.stage === 'leg-finished' || game.bust || game.throws.length >= 3 || game.match?.stage === 'cork-tie') return
     const timer = window.setTimeout(() => {
       const previous = gameRef.current
-      if (!previous || !isRoboGame(previous) || previous.active !== 1 || previous.finished || previous.match?.stage === 'cork-tie') return
+      if (!previous || !isRoboGame(previous) || previous.active !== 1 || previous.finished || previous.match?.stage === 'leg-finished' || previous.match?.stage === 'cork-tie') return
       if (previous.mode === 'match' && previous.match?.stage === 'choice') {
         const next = previous.match.choiceAs === null
           ? chooseMatchFirst(previous, Math.random() < 0.5 ? 'first' : 'game')
@@ -702,6 +703,11 @@ export const Example = () => {
   }
   const leaveGameForHome = () => { setExitConfirmOpen(false); if (onlineStatus === 'matched') { onlineSocket.current?.disconnect(); onlineSocket.current = null; closeVideo(); onlineStatusRef.current = 'offline'; setOnlineStatus('offline'); setOnlineSeat(null); onlineSeatRef.current = null }; gameRef.current = null; setGame(null); setHistory([]); setScreen('home') }
   const goHome = () => { if (screen === 'game' && game && !game.finished) { setExitConfirmOpen(true); return }; leaveGameForHome() }
+  const advanceLeg = () => {
+    const previous = gameRef.current
+    if (!previous || previous.mode !== 'match' || previous.match?.stage !== 'leg-finished' || onlineStatusRef.current === 'matched' && onlineSeatRef.current !== 0) return
+    commitGame(previous, advanceMatchLeg(previous))
+  }
   const undo = () => { const previous = history.at(-1); if (!previous) return; gameRef.current = previous; setGame(previous); setHistory(items => items.slice(0, -1)) }
 
   return <main className="app-shell">
@@ -775,8 +781,8 @@ export const Example = () => {
         <div className="match-video-controls"><button onClick={() => void toggleCamera()}>{localStream ? 'カメラをオフ' : 'カメラをオン'}</button><small>映像のみ共有 · マイク音声は送信しません</small><small className={relayConfigured ? 'relay-ready' : 'relay-missing'}>{relayConfigured ? 'TURN設定あり · 接続経路は未確認' : 'TURN中継なし · ネットワークによって映像がつながらない場合があります'}</small></div>
         {cameraError && <p className="match-video-error" role="status">{cameraError}</p>}
       </div>}
-      {!game.finished && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{isRoboGame(game) && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits} / ${p.darts}` : p.score : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? game.practiceMode === 'target' || game.practiceMode === 'eagles-eye' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `AVG ${p.darts ? (p.points / p.darts).toFixed(1) : '—'} / DART` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
-      {game.finished ? <><GameResults game={game}/><div className="finish-card">{onlineStatus !== 'matched' && <button className="primary-button" onClick={() => { if (isRoboGame(game)) setMode('robo'); gameRef.current = null; setGame(null); setHistory([]); setScreen('setup') }}>同じ設定でもう一度 <span>↻</span></button>}<button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></div></> : <div className="play-layout">
+      {!(game.finished || mode === 'match' && game.match?.stage === 'leg-finished') && <div className="score-strip">{game.players.map((p, i) => <article key={i} className={`score-card ${game.active === i ? 'active' : ''}`}><div><span>P{i + 1}</span><strong>{p.name}</strong>{onlineStatus === 'matched' && i === onlineSeat && <small className="you-tag">あなた</small>}{isRoboGame(game) && i === 1 && <small className="cpu-tag">CPU</small>}</div><b>{isX01Game(game) ? p.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits} / ${p.darts}` : p.score : p.score}</b><small>{mode === 'match' ? `MATCH LEGS ${game.match!.legWins[i]}` : mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket' ? `${targets.reduce((sum, t) => sum + (p.marks[t] || 0), 0)} MARKS` : mode === 'practice' ? game.practiceMode === 'target' || game.practiceMode === 'eagles-eye' ? `命中率 ${p.darts ? Math.round(game.practiceHits / p.darts * 100) : 0}%` : `AVG ${p.darts ? (p.points / p.darts).toFixed(1) : '—'} / DART` : `PPD ${p.darts ? (p.points / p.darts).toFixed(1) : '—'}`}</small></article>)}</div>}
+      {game.finished || mode === 'match' && game.match?.stage === 'leg-finished' ? <><GameResults game={game}/><div className="finish-card">{mode === 'match' && game.match?.stage === 'leg-finished' ? onlineStatus === 'matched' && onlineSeat !== 0 ? <p className="board-hint">ホストがNEXT ROUNDを押すと、次のLEGが始まります。</p> : <button className="primary-button" onClick={advanceLeg}>NEXT ROUND <span>→</span></button> : <>{onlineStatus !== 'matched' && <button className="primary-button" onClick={() => { if (isRoboGame(game)) setMode('robo'); gameRef.current = null; setGame(null); setHistory([]); setScreen('setup') }}>同じ設定でもう一度 <span>↻</span></button>}<button className="primary-button" onClick={goHome}>ホームへ戻る <span>→</span></button></>}</div></> : <div className="play-layout">
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{mode === 'match' ? game.match!.stage === 'cork' ? `CORK · ${activePlayer?.name} の番` : game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${(mode === 'robo' || isRoboGame(game)) && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{mode === 'match' && game.match!.stage === 'cork' ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits}` : activePlayer?.score : activePlayer?.score}</div>
