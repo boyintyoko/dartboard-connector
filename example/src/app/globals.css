@@ -159,6 +159,12 @@
 .cricket-mark-count.marks-1{color:#eff3f6}
 .cricket-mark-count.marks-2{color:#69b8ed}
 .cricket-mark-count.marks-3{color:var(--lime);text-shadow:0 0 9px #c4f36a80}
+.cricket-score tbody th{font-size:clamp(22px,2vw,30px);font-weight:800}
+.cricket-score td{min-width:clamp(54px,6vw,78px);height:clamp(42px,5vh,58px);padding:2px 6px}
+.cricket-mark-count{display:flex;align-items:center;justify-content:center;min-width:0;width:100%;height:100%;color:#f0f4f7}
+.cricket-mark-count svg{display:block;width:clamp(34px,4vw,48px);height:clamp(30px,3.2vh,38px);overflow:visible}
+.cricket-mark-count path{fill:none;stroke:currentColor;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.cricket-score td.closed .cricket-mark-count{color:var(--lime);filter:drop-shadow(0 0 4px #c4f36a70)}
 
 /* Keep the camera strip from pushing the first Cricket row out of view. */
 .match-video-cricket{margin-top:5px;padding:6px;gap:6px 10px}
