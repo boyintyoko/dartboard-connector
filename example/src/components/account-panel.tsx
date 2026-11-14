@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { gameDetails, label, type Game, type GameThrowRecord } from '../lib/game'
 import { ratingEstimate, summarizeRating, type SavedResult } from '../lib/rating'
 
@@ -34,6 +34,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const [selectedDay, setSelectedDay] = useState('')
   const [visibleMonth, setVisibleMonth] = useState('')
   const [expandedGameId, setExpandedGameId] = useState<string | null>(null)
+  const [selectedLegGameId, setSelectedLegGameId] = useState<string | null>(null)
   const owners = useRef(new Map<string, { userId: string | null; seat: number }>())
   const saved = useRef(new Set<string>())
 
@@ -254,32 +255,39 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
             const matchWinner = details?.mode === 'match' && details.matchBestOf && Math.max(...matchWins) >= Math.floor(details.matchBestOf / 2) + 1 ? matchWins[0] > matchWins[1] ? 0 : 1 : null
             const groupWon = details?.mode === 'match' && matchWinner === null ? false : matchWinner === null ? first.won : sortedRows.find(row => row.details?.winner === matchWinner)?.won === true
             return <li key={sessionId} className={`daily-game-entry${expanded ? ' expanded' : ''}`}>
-              <button className="daily-game-toggle" aria-expanded={expanded} onClick={() => setExpandedGameId(expanded ? null : sessionId)}>
+              <button className="daily-game-toggle" aria-expanded={expanded} onClick={() => { setExpandedGameId(expanded ? null : sessionId); if (!expanded) setSelectedLegGameId(sortedRows[0]?.game_id ?? null) }}>
                 <span className="daily-game-heading"><time>{playedAt?.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) ?? '時刻不明'}</time><strong>{modeLabel}</strong><span className={`game-result${groupWon ? ' won' : ''}`}>{details?.mode === 'match' && matchWinner === null ? 'MATCH' : groupWon ? 'WIN' : 'LOSE'}</span><span className="daily-game-expand-label">{expanded ? '閉じる −' : '投ごとの詳細 ＋'}</span></span>
                 {details?.mode === 'match' ? <div className="daily-game-stats"><span>LEG <b>{sortedRows.length}</b></span><span>戦績 <b>{matchWins[0]} – {matchWins[1]}</b></span>{sortedRows.map((row, index) => <span key={row.game_id}>LEG {index + 1} <b>{row.mode === '01' ? '01' : 'CR'}</b> · {row.mode === '01' ? 'PPR' : 'MPR'} <b>{row.stats.toFixed(2)}</b></span>)}</div> : <div className="daily-game-stats"><span>80% <b>{first.stats.toFixed(2)}</b> {statsLabel}</span>{first.stats_100 != null && <span>100% <b>{first.stats_100.toFixed(2)}</b> {statsLabel}</span>}{first.mode === 'count-up' && first.score != null && <span>SCORE <b>{first.score}</b></span>}</div>}
               </button>
               {expanded && <div className="daily-game-detail">
-                {sortedRows.some(row => row.details?.throws.length) ? sortedRows.map((row, index) => {
-                  const detail = row.details
-                  if (!detail) return null
-                  const legLabel = detail.mode === 'match' ? `LEG ${detail.legIndex! + 1} · ${(detail.legMode || row.mode).toUpperCase()}` : detail.mode === 'practice' ? detail.practiceMode?.toUpperCase() || 'PRACTICE' : modeLabel
-                  const turns = new Map<string, GameThrowRecord[]>()
+                {details?.mode === 'match' && sortedRows.length > 1 && <nav className="match-leg-tabs" aria-label="MATCHのLEG選択">{sortedRows.map((row, index) => <button key={row.game_id} className={(selectedLegGameId || sortedRows[0]?.game_id) === row.game_id ? 'selected' : ''} onClick={() => setSelectedLegGameId(row.game_id)}><small>LEG {index + 1}</small><strong>{row.mode === '01' ? '01' : 'CR'}</strong><span>{row.won ? 'WIN' : 'FINISH'}</span></button>)}</nav>}
+                {(() => {
+                  const row = sortedRows.find(candidate => candidate.game_id === selectedLegGameId) || sortedRows[0]
+                  const detail = row?.details
+                  if (!row || !detail?.throws.length) return <p className="daily-game-no-detail">この試合の投ごとの履歴はありません。保存開始後のゲームから確認できます。</p>
+                  const isCricket = detail.legMode === 'cricket' || detail.mode === 'cricket' || detail.practiceMode === 'cricket-count-up'
+                  const legLabel = detail.mode === 'match' ? `LEG ${(detail.legIndex ?? 0) + 1} · ${(detail.legMode || row.mode).toUpperCase()}` : detail.mode === 'practice' ? detail.practiceMode?.toUpperCase() || 'PRACTICE' : modeLabel
+                  const hitTargets = [20, 19, 18, 17, 16, 15, 25]
+                  const turnMap = new Map<string, GameThrowRecord[]>()
                   detail.throws.forEach(throwRecord => {
                     const key = `${throwRecord.round}:${throwRecord.player}`
-                    const turn = turns.get(key) || []
-                    turn.push(throwRecord); turns.set(key, turn)
+                    const turn = turnMap.get(key) || []
+                    turn.push(throwRecord); turnMap.set(key, turn)
                   })
                   return <section className="daily-leg-detail" key={row.game_id}>
-                    <header><strong>{legLabel}</strong><span>{row.mode === '01' ? 'PPR' : row.mode === 'cricket' ? 'MPR' : 'SCORE'} {row.stats.toFixed(2)}{row.stats_100 != null && ` · 100% ${row.stats_100.toFixed(2)}`}</span></header>
-                    {Array.from(turns.entries()).map(([key, turn]) => {
+                    <header><strong>{legLabel}</strong><span>{row.mode === '01' ? 'PPR' : row.mode === 'cricket' ? 'MPR' : 'SCORE'} <b>{row.stats.toFixed(2)}</b>{row.stats_100 != null && <> · 100% <b>{row.stats_100.toFixed(2)}</b></>}</span></header>
+                    {isCricket ? <div className="cricket-hit-summary" aria-label="クリケットナンバーのヒット数">{hitTargets.map(target => {
+                      const hits = detail.throws.filter(throwRecord => throwRecord.hit.base === target).length
+                      return <span key={target}><small>{target === 25 ? 'BULL' : target}</small><b>{hits}</b><i style={{ '--hit-width': `${detail.throws.length ? hits / detail.throws.length * 100 : 0}%` } as CSSProperties}/></span>
+                    })}</div> : <div className="game-hit-summary"><span><small>THROWS</small><b>{detail.throws.length}</b></span><span><small>BULL</small><b>{detail.throws.filter(throwRecord => throwRecord.hit.base === 25).length}</b></span><span><small>D-BULL</small><b>{detail.throws.filter(throwRecord => throwRecord.hit.base === 25 && throwRecord.hit.ratio === 2).length}</b></span></div>}
+                    <h5>ラウンド別プレイデータ</h5>
+                    {Array.from(turnMap.entries()).map(([key, turn]) => {
                       const [round, player] = key.split(':').map(Number)
                       const playerName = detail.players[player] || `PLAYER ${player + 1}`
-                      const isCricket = detail.legMode === 'cricket' || detail.mode === 'cricket' || detail.practiceMode === 'cricket-count-up'
-                      return <div className="daily-turn-detail" key={key}><strong>R{round} · P{player + 1} {playerName}</strong><div>{turn.map((throwRecord, dartIndex) => <span className="daily-dart-detail" key={`${throwRecord.round}-${throwRecord.player}-${dartIndex}`}><small>D{dartIndex + 1}</small><b>{label(throwRecord.hit)}{throwRecord.hit.ring === 'outer-single' ? ' OUT' : throwRecord.hit.ring === 'inner-single' ? ' IN' : ''}</b><em>{isCricket ? `${Object.values(throwRecord.marks).reduce((sum, marks) => sum + marks, 0)} M · ${throwRecord.score} PTS` : detail.mode === 'practice' ? `${throwRecord.score} PTS` : `${throwRecord.score} LEFT`}</em></span>)}</div></div>
+                      return <div className="daily-turn-detail" key={key}><strong>R{round} · P{player + 1} {playerName}</strong><div>{turn.map((throwRecord, dartIndex) => <span className="daily-dart-detail" key={`${throwRecord.round}-${throwRecord.player}-${dartIndex}`}><small>D{dartIndex + 1}</small><b>{label(throwRecord.hit)}{throwRecord.hit.ring === 'outer-single' ? ' OUT' : throwRecord.hit.ring === 'inner-single' ? ' IN' : ''}</b><em>{isCricket ? `${Object.values(throwRecord.marks).reduce((sum, marks) => sum + marks, 0)} MARKS · ${throwRecord.score} PTS` : detail.mode === 'practice' ? `${throwRecord.score} PTS` : `${throwRecord.score} LEFT`}</em></span>)}</div></div>
                     })}
-                    {!turns.size && <p>このゲームでは投ごとの履歴がありません。</p>}
                   </section>
-                }) : <p className="daily-game-no-detail">この試合の投ごとの履歴はありません。保存開始後のゲームから確認できます。</p>}
+                })()}
               </div>}
             </li>
           })}</ul> : <p>この日の試合記録はありません。</p>}
