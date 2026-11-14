@@ -458,7 +458,6 @@ export const Example = () => {
     const cricketMode = activeGame?.mode === 'cricket'
       || (activeGame?.mode === 'match' || activeGame?.mode === 'robo') && activeGame.legMode === 'cricket'
       || activeGame?.mode === 'practice' && activeGame.practiceMode === 'cricket-count-up'
-    if (cricketMode && !targets.includes(hit.base)) return
     const tone = (frequency: number, delay: number, duration: number, volume: number, type: OscillatorType = 'sine', endFrequency = frequency) => {
       const oscillator = ctx.createOscillator(), envelope = ctx.createGain(), filter = ctx.createBiquadFilter()
       const start = now + delay
@@ -482,6 +481,12 @@ export const Example = () => {
       noise.buffer = buffer; filter.type = 'highpass'; filter.frequency.value = 1700
       envelope.gain.setValueAtTime(volume * 0.55, now); envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.055)
       noise.connect(filter); filter.connect(envelope); envelope.connect(ctx.destination); noise.start(now); noise.stop(now + 0.06)
+    }
+    if (cricketMode && !targets.includes(hit.base)) {
+      // Give misses a quiet, low falling cue; only Cricket's scoring numbers use hit sounds.
+      tone(185, 0, 0.2, 0.09, 'triangle', 92)
+      tone(92, 0.025, 0.16, 0.055, 'sine', 58)
+      return
     }
     if (hit.base === 0) {
       impact(92, 0.08)
