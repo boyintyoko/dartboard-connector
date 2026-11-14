@@ -6,12 +6,18 @@ const limits = {
 export function ratingEstimate(mode: '01' | 'cricket', stats: number) {
   const thresholds = limits[mode]
   if (!Number.isFinite(stats) || stats <= thresholds[0]) return 1
+  const lastIndex = thresholds.length - 1
+  const maxRating = 18.99
+  if (stats >= thresholds[lastIndex]) {
+    const lastStep = thresholds[lastIndex] - thresholds[lastIndex - 1]
+    return Math.min(maxRating, lastIndex + (stats - thresholds[lastIndex]) / lastStep)
+  }
   for (let index = 0; index < thresholds.length - 1; index += 1) {
     const lower = thresholds[index]
     const upper = thresholds[index + 1]
     if (stats < upper) return index + 1 + (stats - lower) / (upper - lower)
   }
-  return 18
+  return maxRating
 }
 export function summarizeRating(results: SavedResult[]) {
   const recent = results.filter(game => game.mode === '01' || game.mode === 'cricket').slice(0, 30)
