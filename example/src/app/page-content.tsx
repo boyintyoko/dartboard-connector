@@ -5,7 +5,7 @@ import { io, type Socket } from 'socket.io-client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AccountPanel } from '../components/account-panel'
 import { receiveBoardSignal, type BoardSignal } from '../lib/board-input'
-import { advanceMatchLeg, chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, resolveOpeningCoinToss, roboAim, targets, throwCork, throwDart, throwOpeningCork, type Award, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
+import { advanceMatchLeg, checkoutAdvice, chooseMatchFirst, chooseMatchGame, createGame, halfItTargets, isX01Game, label, nextTurn, practiceModeTitle, practiceTargetForRound, practiceTargets, resolveCork, resolveMatchCoinToss, resolveOpeningCoinToss, roboAim, targets, throwCork, throwDart, throwOpeningCork, type Award, type Game, type Hit, type MatchLeadRule, type Mode, type OutRule, type PracticeMode } from '../lib/game'
 
 const modes: { id: Mode; title: string; subtitle: string; icon: string; accent: string }[] = [
   { id: '01', title: '01', subtitle: 'ゼロを目指して対戦', icon: '01', accent: 'red' },
@@ -314,6 +314,9 @@ export const Example = () => {
   const soundRef = useRef(sound); soundRef.current = sound
   const modeInfo = modes.find(item => item.id === mode)!
   const activePlayer = game?.players[game.active]
+  const checkout = game && activePlayer && isX01Game(game) && !game.finished && !game.bust && !game.openingCork && game.match?.stage !== 'choice' && game.match?.stage !== 'cork' && game.match?.stage !== 'cork-tie' && game.throws.length < 3
+    ? checkoutAdvice(activePlayer.score, game.outRule, game.bull, 3 - game.throws.length)
+    : null
   const openingCorkActive = Boolean(game?.openingCork)
   const matchCorkActive = mode === 'match' && game?.match?.stage === 'cork'
   const isCorking = openingCorkActive || matchCorkActive
@@ -929,6 +932,7 @@ export const Example = () => {
         <div className="turn-panel">
           <div className="turn-player">{onlineStatus === 'matched' && <strong className="online-turn-owner">{game.active === onlineSeat ? 'あなたの番' : '相手の番'} · </strong>}{isCorking ? `CORK · ${activePlayer?.name} の番` : mode === 'match' ? game.match!.stage === 'cork-tie' ? 'CORK · 近いダーツを選択' : game.match!.stage === 'choice' ? `${game.players[game.active].name} · CHOICE` : `LEG ${game.match!.legIndex + 1} · ${activePlayer?.name}` : `P${game.active + 1} · ${activePlayer?.name}${(mode === 'robo' || isRoboGame(game)) && game.active === 1 ? ' · CPUのターン' : ''}`}</div>
           <div className="main-score">{isCorking ? 'CORK' : mode === 'match' && game.match!.stage === 'cork-tie' ? 'TIE' : mode === 'match' && game.match!.stage === 'choice' ? 'CH' : isX01Game(game) ? activePlayer?.score : mode === 'practice' ? game.practiceMode === 'target' ? `${game.practiceHits}` : activePlayer?.score : activePlayer?.score}</div>
+          {checkout && <aside className={`checkout-advice ${checkout.kind}`} aria-live="polite"><small>{checkout.kind === 'checkout' ? `CHECKOUT · ${checkout.darts.length} DART${checkout.darts.length === 1 ? '' : 'S'}` : 'ARRANGE · NEXT VISIT'}</small><strong>{checkout.darts.map(hit => label(hit)).join(' → ')}{checkout.kind === 'arrange' && ` → ${checkout.leave}（${checkoutAdvice(checkout.leave, game.outRule, game.bull)?.darts.map(hit => label(hit)).join(' → ') || 'OUT' }）`}</strong></aside>}
           {mode === 'practice' && <p className="practice-focus">{game.practiceMode === 'half-it' ? 'THIS ROUND' : game.practiceMode === 'shoot-out' ? 'MULTIPLIER' : 'TARGET'} <strong>{practiceTargetForRound(game)}</strong>{game.practiceMode === 'shoot-out' && <small className="practice-progress"> · {game.practiceOpened.filter(n => n !== 25).length}/20 NUMBERS</small>}</p>}
             {mode === 'match' && game.match!.stage === 'choice' ? <div className="match-decision">{isRoboGame(game) && game.active === 1 ? <p className="bot-thinking">ROBO THINKING<span>···</span></p> : game.match!.choiceAs === null ? <><p>{onlineStatus === 'matched' ? 'コイントスの勝者' : 'コークの勝者'}が選びます。先攻を取るか、ゲーム選択権を取ってください。</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('first', 'first')}>先攻を取る</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('choose', 'game')}>ゲームを選ぶ</button></> : <><p>{game.players[game.active].name} がCHのゲームを選択</p><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', '01')}>01を選ぶ</button><button disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('select-game', 'cricket')}>CRICKETを選ぶ</button></>}</div> : mode === 'match' && game.match!.stage === 'cork-tie' ? <div className="match-decision"><p>同じエリアに入っています。実際に中心に近い方を選んでください。</p>{game.players.map((p, i) => <button key={i} disabled={onlineStatus === 'matched' && game.active !== onlineSeat} onClick={() => requestMatchDecision('cork-winner', i)}>{p.name} のダーツが近い</button>)}</div> : <>
             <div className="throw-message" aria-live="polite">{game.message}</div>

@@ -79,6 +79,48 @@ export const isX01 = (mode: Mode | 'choice') => mode === '01' || mode === 'match
 export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 'robo' ? game.legMode === '01' : isX01(game.mode)
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
 export const points = (hit: Hit, bull: Game['bull']) => hit.base === 25 && bull === 'fat' ? 50 : hit.base * hit.ratio
+export function checkoutAdvice(score: number, outRule: OutRule, bull: Game['bull'], dartsAvailable = 3): { kind: 'checkout' | 'arrange'; darts: Hit[]; leave: number } | null {
+  const scoringHits: Hit[] = [...Array.from({ length: 20 }, (_, index) => index + 1).flatMap(base => [1, 2, 3].map(ratio => ({ base, ratio }))), { base: 25, ratio: 1 }, { base: 25, ratio: 2 }]
+  const outAllowed = (hit: Hit) => outRule === 'open' || outRule === 'master' && (hit.ratio === 2 || hit.ratio === 3) || outRule === 'double' && hit.ratio === 2
+  const finalOrder = (hit: Hit) => hit.ratio === 2 ? (hit.base === 25 ? 0 : hit.base === 20 ? 1 : hit.base === 16 ? 2 : hit.base === 18 ? 3 : 10 + (20 - hit.base)) : hit.ratio === 3 ? 40 + (20 - hit.base) : hit.base === 25 ? 80 : 100 + (20 - hit.base)
+  const scoringOrder = (hit: Hit) => hit.ratio === 3 ? hit.base === 20 ? 0 : 10 + (20 - hit.base) : hit.ratio === 2 ? 30 + (20 - hit.base) : hit.base === 25 ? 55 : 60 + (20 - hit.base)
+  const byPreference = (a: Hit, b: Hit, rank: (hit: Hit) => number) => rank(a) - rank(b)
+  const finish = (remaining: number, darts: number): Hit[] | null => {
+    if (darts === 1) {
+      const last = scoringHits.filter(outAllowed).sort((a, b) => byPreference(a, b, finalOrder)).find(hit => points(hit, bull) === remaining)
+      return last ? [last] : null
+    }
+    for (const hit of [...scoringHits].sort((a, b) => byPreference(a, b, scoringOrder))) {
+      const hitPoints = points(hit, bull)
+      if (hitPoints >= remaining) continue
+      const rest = finish(remaining - hitPoints, darts - 1)
+      if (rest) return [hit, ...rest]
+    }
+    return null
+  }
+  if (!Number.isInteger(score) || score < 2 || score > (outRule === 'open' ? 180 : 170)) return null
+  for (let darts = 1; darts <= Math.max(0, Math.min(3, dartsAvailable)); darts++) {
+    const route = finish(score, darts)
+    if (route) return { kind: 'checkout', darts: route, leave: 0 }
+  }
+  const preferredLeaves = [40, 32, 36, 24, 20, 16, 48, 50, 64, 56, 60]
+  for (const leave of preferredLeaves) {
+    if (leave >= score || !finish(leave, 3)) continue
+    const arrange = (remaining: number, darts: number): Hit[] | null => {
+      if (darts === 0) return remaining === 0 ? [] : null
+      for (const hit of [...scoringHits].sort((a, b) => byPreference(a, b, scoringOrder))) {
+        const value = points(hit, bull)
+        if (value > remaining) continue
+        const rest = arrange(remaining - value, darts - 1)
+        if (rest) return [hit, ...rest]
+      }
+      return null
+    }
+    const route = arrange(score - leave, Math.max(0, Math.min(3, dartsAvailable)))
+    if (route) return { kind: 'arrange', darts: route, leave }
+  }
+  return null
+}
 export function roboAim(game: Game): Hit {
   const player = game.players[game.active]
   const remaining = player.score
