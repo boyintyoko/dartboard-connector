@@ -458,15 +458,7 @@ export const Example = () => {
     const cricketMode = activeGame?.mode === 'cricket'
       || (activeGame?.mode === 'match' || activeGame?.mode === 'robo') && activeGame.legMode === 'cricket'
       || activeGame?.mode === 'practice' && activeGame.practiceMode === 'cricket-count-up'
-    if (cricketMode) {
-      if (hit.base !== 0 && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
-        const call = new SpeechSynthesisUtterance(hit.base === 25 ? 'ブル' : String(hit.base))
-        call.lang = 'ja-JP'; call.rate = 1.12; call.pitch = 1.06; call.volume = 0.9
-        window.speechSynthesis.speak(call)
-      }
-      return
-    }
+    if (cricketMode && !targets.includes(hit.base)) return
     const tone = (frequency: number, delay: number, duration: number, volume: number, type: OscillatorType = 'sine', endFrequency = frequency) => {
       const oscillator = ctx.createOscillator(), envelope = ctx.createGain(), filter = ctx.createBiquadFilter()
       const start = now + delay
