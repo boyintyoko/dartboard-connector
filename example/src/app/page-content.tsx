@@ -451,41 +451,66 @@ export const Example = () => {
     if (!soundRef.current || !audio.current || audio.current.state !== 'running') return
     const ctx = audio.current
     const now = ctx.currentTime
-    const tone = (frequency: number, delay: number, duration: number, volume: number, type: OscillatorType = 'sine') => {
+    const activeGame = gameRef.current
+    const cricketMode = activeGame?.mode === 'cricket'
+      || (activeGame?.mode === 'match' || activeGame?.mode === 'robo') && activeGame.legMode === 'cricket'
+      || activeGame?.mode === 'practice' && activeGame.practiceMode === 'cricket-count-up'
+    if (cricketMode) {
+      if (hit.base !== 0 && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+        const call = new SpeechSynthesisUtterance(hit.base === 25 ? 'ブル' : String(hit.base))
+        call.lang = 'ja-JP'; call.rate = 1.12; call.pitch = 1.06; call.volume = 0.9
+        window.speechSynthesis.speak(call)
+      }
+      return
+    }
+    const tone = (frequency: number, delay: number, duration: number, volume: number, type: OscillatorType = 'sine', endFrequency = frequency) => {
       const oscillator = ctx.createOscillator(), envelope = ctx.createGain(), filter = ctx.createBiquadFilter()
       const start = now + delay
       oscillator.type = type
-      oscillator.frequency.setValueAtTime(frequency * 1.45, start)
-      oscillator.frequency.exponentialRampToValueAtTime(frequency, start + Math.min(0.045, duration / 3))
+      oscillator.frequency.setValueAtTime(frequency * 1.55, start)
+      oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), start + Math.min(0.075, duration / 2))
       filter.type = 'lowpass'; filter.frequency.value = Math.max(900, frequency * 3)
       oscillator.connect(filter); filter.connect(envelope); envelope.connect(ctx.destination)
       envelope.gain.setValueAtTime(0.0001, start)
-      envelope.gain.exponentialRampToValueAtTime(volume, start + 0.008)
+      envelope.gain.exponentialRampToValueAtTime(volume, start + 0.004)
       envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration)
       oscillator.start(start); oscillator.stop(start + duration + 0.01)
     }
+    const impact = (pitch = 125, volume = 0.12) => {
+      tone(pitch, 0, 0.13, volume, 'triangle', pitch * 0.52)
+      const length = Math.floor(ctx.sampleRate * 0.055)
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+      const samples = buffer.getChannelData(0)
+      for (let i = 0; i < length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 2
+      const noise = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), envelope = ctx.createGain()
+      noise.buffer = buffer; filter.type = 'highpass'; filter.frequency.value = 1700
+      envelope.gain.setValueAtTime(volume * 0.55, now); envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.055)
+      noise.connect(filter); filter.connect(envelope); envelope.connect(ctx.destination); noise.start(now); noise.stop(now + 0.06)
+    }
     if (hit.base === 0) {
-      tone(145, 0, 0.12, 0.065, 'triangle')
+      impact(92, 0.08)
       return
     }
     if (hit.base === 25) {
       const innerBull = hit.ratio === 2
-      tone(innerBull ? 880 : 660, 0, innerBull ? 0.48 : 0.32, 0.09)
-      tone(innerBull ? 1320 : 990, 0.035, innerBull ? 0.38 : 0.25, 0.055, 'triangle')
-      if (innerBull) tone(1760, 0.075, 0.28, 0.035)
+      impact(innerBull ? 190 : 150, 0.16)
+      tone(innerBull ? 784 : 587, 0.015, innerBull ? 0.48 : 0.34, 0.12, 'sawtooth')
+      tone(innerBull ? 1175 : 880, 0.055, innerBull ? 0.4 : 0.29, 0.08, 'triangle')
+      if (innerBull) tone(1568, 0.11, 0.34, 0.055, 'sine')
       return
     }
-    const pitch = 280 + (hit.base % 12) * 16
-    tone(105, 0, 0.075, 0.07, 'triangle')
+    const pitch = 330 + (hit.base % 12) * 22
+    impact(hit.ratio === 3 ? 155 : hit.ratio === 2 ? 135 : 112, hit.ratio === 3 ? 0.13 : 0.1)
     if (hit.ratio === 3) {
-      tone(pitch * 2, 0.015, 0.2, 0.075, 'triangle')
-      tone(pitch * 3, 0.045, 0.28, 0.045)
-      tone(pitch * 4, 0.08, 0.22, 0.035, 'triangle')
+      tone(pitch * 1.5, 0.015, 0.24, 0.095, 'triangle')
+      tone(pitch * 2, 0.06, 0.34, 0.07, 'sawtooth')
+      tone(pitch * 3, 0.12, 0.3, 0.045, 'sine')
     } else if (hit.ratio === 2) {
-      tone(pitch * 1.5, 0.015, 0.22, 0.075, 'triangle')
-      tone(pitch * 2, 0.05, 0.3, 0.05)
+      tone(pitch * 1.25, 0.02, 0.24, 0.085, 'triangle')
+      tone(pitch * 1.75, 0.07, 0.29, 0.055, 'sawtooth')
     } else {
-      tone(pitch, 0.01, 0.13, 0.065, 'triangle')
+      tone(pitch, 0.015, 0.18, 0.075, 'triangle', pitch * 0.82)
     }
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit, saveHistory = true) => {
