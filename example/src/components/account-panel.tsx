@@ -2,7 +2,7 @@
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { useEffect, useRef, useState } from 'react'
-import type { Game } from '../lib/game'
+import { gameDetails, label, type Game, type GameThrowRecord } from '../lib/game'
 import { ratingEstimate, summarizeRating, type SavedResult } from '../lib/rating'
 
 declare global {
@@ -33,6 +33,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const [queue, setQueue] = useState<{ userId: string | null; rows: PendingResult[] }>({ userId: null, rows: [] })
   const [selectedDay, setSelectedDay] = useState('')
   const [visibleMonth, setVisibleMonth] = useState('')
+  const [expandedGameId, setExpandedGameId] = useState<string | null>(null)
   const owners = useRef(new Map<string, { userId: string | null; seat: number }>())
   const saved = useRef(new Set<string>())
 
@@ -85,7 +86,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     setResults([])
     if (!client || !user) return
     let live = true
-    void client.from('darts_game_results').select('game_id,mode,stats,stats_100,score,won,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).order('game_id', { ascending: false }).limit(1000).then(({ data, error: cause }) => {
+    void client.from('darts_game_results').select('game_id,mode,stats,stats_100,score,won,eligible,created_at,details').eq('user_id', user.id).order('created_at', { ascending: false }).order('game_id', { ascending: false }).limit(1000).then(({ data, error: cause }) => {
       if (!live) return
       if (cause) setError(`成績を読み込めませんでした: ${cause.message}`)
       else { setResults((data ?? []) as SavedResult[]); setError('') }
@@ -108,21 +109,21 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     if (!user || !game || queue.userId !== user.id) return
     const owner = owners.current.get(game.id)
     if (!owner || owner.userId !== user.id) return
-    const pending = game.ratingResults.filter(result => result.eligible && !saved.current.has(`${user.id}:${result.id}`) && !queue.rows.some(row => row.game_id === result.id))
+    const pending = game.ratingResults.filter(result => !saved.current.has(`${user.id}:${result.id}`) && !queue.rows.some(row => row.game_id === result.id))
     if (!pending.length) return
-    const rows = pending.map(result => ({ user_id: user.id, game_id: result.id, mode: result.mode, stats: result.stats[owner.seat], stats_100: result.stats100?.[owner.seat] ?? null, won: result.winner === owner.seat, created_at: result.createdAt || new Date().toISOString() }))
+    const rows = pending.map(result => ({ user_id: user.id, game_id: result.id, mode: result.mode, stats: result.stats[owner.seat], stats_100: result.stats100?.[owner.seat] ?? null, won: result.winner === owner.seat, eligible: result.eligible, created_at: result.createdAt || new Date().toISOString(), details: result.details }))
     setQueue(old => ({ userId: user.id, rows: [...old.rows, ...rows] }))
   }, [game, user?.id, queue])
   useEffect(() => {
-    if (!user || !game || game.mode !== 'practice' || game.practiceMode !== 'count-up' || !game.finished || queue.userId !== user.id) return
+    if (!user || !game || game.mode !== 'practice' || game.practiceMode === 'target' || !game.finished || queue.userId !== user.id) return
     const owner = owners.current.get(game.id)
     if (!owner || owner.userId !== user.id) return
-    const gameId = `${game.id}:count-up`
+    const gameId = `${game.id}:${game.practiceMode}`
     if (saved.current.has(`${user.id}:${gameId}`) || queue.rows.some(row => row.game_id === gameId)) return
     const player = game.players[owner.seat]
     if (!player) return
-    const average = game.limit ? player.score / game.limit : 0
-    const result: PendingResult = { user_id: user.id, game_id: gameId, mode: 'count-up', stats: average, stats_100: average, score: player.score, won: game.winner === owner.seat, created_at: new Date().toISOString() }
+    const average = game.practiceMode === 'count-up' ? game.limit ? player.score / game.limit : 0 : player.darts ? player.points / player.darts : 0
+    const result: PendingResult = { user_id: user.id, game_id: gameId, mode: 'count-up', stats: average, stats_100: average, score: player.score, won: game.winner === owner.seat, eligible: false, created_at: new Date().toISOString(), details: gameDetails(game) }
     setQueue(old => ({ userId: user.id, rows: [...old.rows, result] }))
   }, [game, user?.id, queue])
   useEffect(() => {
@@ -170,7 +171,8 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     else { setUser(null); setResults([]); setStatus(''); setError('') }
   }
   const summary = summarizeRating(results)
-  const countUpResults = results.filter(result => result.mode === 'count-up' && typeof result.score === 'number')
+  const isCountUp = (result: SavedResult) => result.mode === 'count-up' && (result.details?.practiceMode === 'count-up' || !result.details?.practiceMode) && typeof result.score === 'number'
+  const countUpResults = results.filter(isCountUp)
   const countUpAverage = countUpResults.length ? countUpResults.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpResults.length : null
   const displayedMonth = visibleMonth ? dateFromKey(`${visibleMonth}-01`) : new Date()
   const daysInMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + 1, 0).getDate()
@@ -178,19 +180,29 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
   const recordedDays = new Set(results.flatMap(result => result.created_at ? [localDateKey(new Date(result.created_at))] : []))
   const selectedResults = results.filter(result => result.created_at && localDateKey(new Date(result.created_at)) === selectedDay)
   const dailyGames = [...selectedResults].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  const dailyGameGroups = Array.from(dailyGames.reduce((groups, result) => {
+    const key = result.details?.sessionId || result.game_id
+    const group = groups.get(key) || []
+    group.push(result); groups.set(key, group)
+    return groups
+  }, new Map<string, SavedResult[]>()).entries())
   const dailyAverage = (mode: SavedResult['mode'], field: 'stats' | 'stats_100') => {
     const games = selectedResults.filter(result => result.mode === mode && typeof result[field] === 'number' && Number.isFinite(result[field]))
     return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
   }
-  const day01 = dailyAverage('01', 'stats')
-  const dayCricket = dailyAverage('cricket', 'stats')
+  const dailyEligibleAverage = (mode: '01' | 'cricket') => {
+    const games = selectedResults.filter(result => result.mode === mode && result.eligible !== false && Number.isFinite(result.stats))
+    return games.length ? games.reduce((sum, result) => sum + result.stats, 0) / games.length : null
+  }
+  const day01 = dailyEligibleAverage('01')
+  const dayCricket = dailyEligibleAverage('cricket')
   const dayLevels = [day01 === null ? null : ratingEstimate('01', day01), dayCricket === null ? null : ratingEstimate('cricket', dayCricket)].filter((level): level is number => level !== null)
   const dayRt = dayLevels.length ? dayLevels.reduce((sum, level) => sum + level, 0) / dayLevels.length : null
   const dayFlight = dayRt === null ? '—' : dayRt >= 16 ? 'SA' : dayRt >= 13 ? 'AA' : dayRt >= 10 ? 'A' : dayRt >= 8 ? 'BB' : dayRt >= 6 ? 'B' : dayRt >= 4 ? 'CC' : 'C'
   const hasUnbackfilledStats = selectedResults.some(result => (result.mode === '01' || result.mode === 'cricket') && result.stats_100 == null)
-  const countUpGames = selectedResults.filter(result => result.mode === 'count-up')
+  const countUpGames = selectedResults.filter(isCountUp)
   const countUpScoreAverage = countUpGames.length ? countUpGames.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpGames.length : null
-  const countUpRoundAverage = dailyAverage('count-up', 'stats')
+  const countUpRoundAverage = countUpGames.length ? countUpGames.reduce((sum, result) => sum + result.stats, 0) / countUpGames.length : null
   const monthTitle = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long' }).format(displayedMonth)
   const changeMonth = (amount: number) => {
     const date = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + amount, 1)
@@ -213,11 +225,11 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
           const day = index + 1
           const key = `${visibleMonth || monthKey(displayedMonth)}-${String(day).padStart(2, '0')}`
           const hasResults = recordedDays.has(key)
-          return <button key={key} className={`calendar-day${selectedDay === key ? ' selected' : ''}${hasResults ? ' has-results' : ''}`} role="gridcell" aria-label={`${key}${hasResults ? ' · 記録あり' : ''}`} aria-pressed={selectedDay === key} onClick={() => setSelectedDay(key)}>{day}{hasResults && <i/>}</button>
+          return <button key={key} className={`calendar-day${selectedDay === key ? ' selected' : ''}${hasResults ? ' has-results' : ''}`} role="gridcell" aria-label={`${key}${hasResults ? ' · 記録あり' : ''}`} aria-pressed={selectedDay === key} onClick={() => { setSelectedDay(key); setExpandedGameId(null) }}>{day}{hasResults && <i/>}</button>
         })}
       </div>
       <div className="day-stats">
-        <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{selectedResults.length} ゲーム</small></div>
+        <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{dailyGameGroups.length} ゲーム</small></div>
         <article className="day-rating"><small>この日の参考RT</small><strong>{dayRt?.toFixed(2) ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '当日の01・CRの80%スタッツから補間' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}・80%スタッツから仮算出` : 'この日に01またはCRの記録がありません'}</span></article>
         <div className="day-metric-grid">
           <article className="day-metric"><small>01 · 100%</small><strong>{dailyAverage('01','stats_100')?.toFixed(2) ?? '—'}</strong><span>PPR · {selectedResults.filter(row => row.mode === '01').length}ゲーム</span></article>
@@ -228,13 +240,47 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
         </div>
         <section className="daily-game-history" aria-label="この日のゲーム履歴">
           <h4>この日のゲーム</h4>
-          {dailyGames.length ? <ul>{dailyGames.map(result => {
-            const modeLabel = result.mode === '01' ? '01' : result.mode === 'cricket' ? 'CRICKET' : 'COUNT-UP'
-            const statsLabel = result.mode === '01' ? 'PPR' : result.mode === 'cricket' ? 'MPR' : 'AVG / ROUND'
-            const playedAt = result.created_at ? new Date(result.created_at) : null
-            return <li key={result.game_id}>
-              <div className="daily-game-heading"><time>{playedAt?.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) ?? '時刻不明'}</time><strong>{modeLabel}</strong><span className={result.won ? 'game-result won' : 'game-result'}>{result.won ? 'WIN' : 'LOSE'}</span></div>
-              <div className="daily-game-stats"><span>80% <b>{result.stats.toFixed(2)}</b> {statsLabel}</span>{result.stats_100 != null && <span>100% <b>{result.stats_100.toFixed(2)}</b> {statsLabel}</span>}{result.mode === 'count-up' && result.score != null && <span>SCORE <b>{result.score}</b></span>}</div>
+          {dailyGameGroups.length ? <ul>{dailyGameGroups.map(([sessionId, rows]) => {
+            const sortedRows = [...rows].sort((a, b) => (a.details?.legIndex ?? 0) - (b.details?.legIndex ?? 0))
+            const first = sortedRows[0]
+            const details = first.details
+            const practiceLabels: Record<string, string> = { target: 'TARGET PRACTICE', 'count-up': 'COUNT-UP', 'cricket-count-up': 'CRICKET COUNT-UP', 'eagles-eye': 'EAGLE’S EYE', 'half-it': 'HALF-IT', 'shoot-out': 'SHOOT OUT' }
+            const modeLabel = details?.mode === 'match' ? 'MATCH' : details?.mode === 'robo' ? 'ROBO MATCH' : details?.mode === 'practice' ? practiceLabels[details.practiceMode || ''] || 'PRACTICE' : first.mode === '01' ? '01' : first.mode === 'cricket' ? 'CRICKET' : 'COUNT-UP'
+            const statsLabel = first.mode === '01' ? 'PPR' : first.mode === 'cricket' ? 'MPR' : details?.practiceMode === 'count-up' || !details?.practiceMode ? 'AVG / ROUND' : 'AVG / DART'
+            const playedAt = first.created_at ? new Date(first.created_at) : null
+            const expanded = expandedGameId === sessionId
+            const matchWins = [0, 0]
+            if (details?.mode === 'match') sortedRows.forEach(row => { if (row.details?.winner === 0 || row.details?.winner === 1) matchWins[row.details.winner]++ })
+            const matchWinner = details?.mode === 'match' && details.matchBestOf && Math.max(...matchWins) >= Math.floor(details.matchBestOf / 2) + 1 ? matchWins[0] > matchWins[1] ? 0 : 1 : null
+            const groupWon = details?.mode === 'match' && matchWinner === null ? false : matchWinner === null ? first.won : sortedRows.find(row => row.details?.winner === matchWinner)?.won === true
+            return <li key={sessionId} className={`daily-game-entry${expanded ? ' expanded' : ''}`}>
+              <button className="daily-game-toggle" aria-expanded={expanded} onClick={() => setExpandedGameId(expanded ? null : sessionId)}>
+                <span className="daily-game-heading"><time>{playedAt?.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) ?? '時刻不明'}</time><strong>{modeLabel}</strong><span className={`game-result${groupWon ? ' won' : ''}`}>{details?.mode === 'match' && matchWinner === null ? 'MATCH' : groupWon ? 'WIN' : 'LOSE'}</span><span className="daily-game-expand-label">{expanded ? '閉じる −' : '投ごとの詳細 ＋'}</span></span>
+                {details?.mode === 'match' ? <div className="daily-game-stats"><span>LEG <b>{sortedRows.length}</b></span><span>戦績 <b>{matchWins[0]} – {matchWins[1]}</b></span>{sortedRows.map((row, index) => <span key={row.game_id}>LEG {index + 1} <b>{row.mode === '01' ? '01' : 'CR'}</b> · {row.mode === '01' ? 'PPR' : 'MPR'} <b>{row.stats.toFixed(2)}</b></span>)}</div> : <div className="daily-game-stats"><span>80% <b>{first.stats.toFixed(2)}</b> {statsLabel}</span>{first.stats_100 != null && <span>100% <b>{first.stats_100.toFixed(2)}</b> {statsLabel}</span>}{first.mode === 'count-up' && first.score != null && <span>SCORE <b>{first.score}</b></span>}</div>}
+              </button>
+              {expanded && <div className="daily-game-detail">
+                {sortedRows.some(row => row.details?.throws.length) ? sortedRows.map((row, index) => {
+                  const detail = row.details
+                  if (!detail) return null
+                  const legLabel = detail.mode === 'match' ? `LEG ${detail.legIndex! + 1} · ${(detail.legMode || row.mode).toUpperCase()}` : detail.mode === 'practice' ? detail.practiceMode?.toUpperCase() || 'PRACTICE' : modeLabel
+                  const turns = new Map<string, GameThrowRecord[]>()
+                  detail.throws.forEach(throwRecord => {
+                    const key = `${throwRecord.round}:${throwRecord.player}`
+                    const turn = turns.get(key) || []
+                    turn.push(throwRecord); turns.set(key, turn)
+                  })
+                  return <section className="daily-leg-detail" key={row.game_id}>
+                    <header><strong>{legLabel}</strong><span>{row.mode === '01' ? 'PPR' : row.mode === 'cricket' ? 'MPR' : 'SCORE'} {row.stats.toFixed(2)}{row.stats_100 != null && ` · 100% ${row.stats_100.toFixed(2)}`}</span></header>
+                    {Array.from(turns.entries()).map(([key, turn]) => {
+                      const [round, player] = key.split(':').map(Number)
+                      const playerName = detail.players[player] || `PLAYER ${player + 1}`
+                      const isCricket = detail.legMode === 'cricket' || detail.mode === 'cricket' || detail.practiceMode === 'cricket-count-up'
+                      return <div className="daily-turn-detail" key={key}><strong>R{round} · P{player + 1} {playerName}</strong><div>{turn.map((throwRecord, dartIndex) => <span className="daily-dart-detail" key={`${throwRecord.round}-${throwRecord.player}-${dartIndex}`}><small>D{dartIndex + 1}</small><b>{label(throwRecord.hit)}{throwRecord.hit.ring === 'outer-single' ? ' OUT' : throwRecord.hit.ring === 'inner-single' ? ' IN' : ''}</b><em>{isCricket ? `${Object.values(throwRecord.marks).reduce((sum, marks) => sum + marks, 0)} M · ${throwRecord.score} PTS` : detail.mode === 'practice' ? `${throwRecord.score} PTS` : `${throwRecord.score} LEFT`}</em></span>)}</div></div>
+                    })}
+                    {!turns.size && <p>このゲームでは投ごとの履歴がありません。</p>}
+                  </section>
+                }) : <p className="daily-game-no-detail">この試合の投ごとの履歴はありません。保存開始後のゲームから確認できます。</p>}
+              </div>}
             </li>
           })}</ul> : <p>この日の試合記録はありません。</p>}
         </section>

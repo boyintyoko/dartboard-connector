@@ -6,12 +6,16 @@ create table if not exists public.darts_game_results (
   stats double precision not null check (stats >= 0 and stats <= case when mode = 'cricket' then 9 else 180 end),
   stats_100 double precision check (stats_100 is null or (stats_100 >= 0 and stats_100 <= case when mode = 'cricket' then 9 else 180 end)),
   score integer check (score is null or score >= 0),
+  eligible boolean not null default true,
+  details jsonb,
   won boolean not null default false,
   created_at timestamptz not null default now(),
   primary key (user_id, game_id)
 );
 alter table public.darts_game_results add column if not exists stats_100 double precision;
 alter table public.darts_game_results add column if not exists score integer;
+alter table public.darts_game_results add column if not exists eligible boolean not null default true;
+alter table public.darts_game_results add column if not exists details jsonb;
 alter table public.darts_game_results drop constraint if exists darts_game_results_mode_check;
 alter table public.darts_game_results add constraint darts_game_results_mode_check check (mode in ('01', 'cricket', 'count-up'));
 alter table public.darts_game_results drop constraint if exists darts_game_results_check;

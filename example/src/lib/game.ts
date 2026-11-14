@@ -24,7 +24,9 @@ export type MatchState = {
 export type OpeningCorkState = { throws: Hit[]; order: [number, number]; attempt: number }
 export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string }
 export type RoundStats = { points: number; marks: number; rounds: number }
-export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; stats100: number[]; winner: number | null; eligible: boolean; createdAt: string }
+export type GameThrowRecord = { player: number; round: number; hit: Omit<Hit, 'position'>; score: number; marks: Record<number, number> }
+export type GameDetails = { sessionId: string; mode: Mode; legMode: '01' | 'cricket' | null; legIndex?: number; matchBestOf?: 3 | 5; practiceMode?: PracticeMode; initial: number; outRule: OutRule; bull: 'fat' | 'split'; players: string[]; throws: GameThrowRecord[]; winner: number | null }
+export type RatingResult = { id: string; mode: '01' | 'cricket'; stats: number[]; stats100: number[]; winner: number | null; eligible: boolean; createdAt: string; details: GameDetails }
 export type Game = {
   id: string
   initial: number
@@ -38,6 +40,7 @@ export type Game = {
   match: MatchState | null
   openingCork: OpeningCorkState | null
   players: Player[]
+  throwHistory: GameThrowRecord[]
   active: number
   round: number
   limit: number
@@ -54,6 +57,9 @@ export type Game = {
   practiceMode: PracticeMode
   practiceRoundHits: number
   practiceOpened: number[]
+}
+export function gameDetails(game: Game): GameDetails {
+  return { sessionId: game.id, mode: game.mode, legMode: game.legMode, ...(game.match ? { legIndex: game.match.legIndex, matchBestOf: game.match.bestOf } : {}), ...(game.mode === 'practice' ? { practiceMode: game.practiceMode } : {}), initial: game.initial, outRule: game.outRule, bull: game.bull, players: game.players.map(player => player.name), throws: [...game.throwHistory], winner: game.winner }
 }
 export const targets = [20, 19, 18, 17, 16, 15, 25]
 export const practiceTargets = [20, 19, 18, 17, 16, 15, 25]
@@ -125,7 +131,8 @@ function recordResult(game: Game, winner: number | null): Game {
   const stats = (game.statsFrozen ?? game.statsTotals).map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
   const stats100 = game.statsTotals.map(p => p.rounds ? (mode === '01' ? p.points : p.marks) / p.rounds : 0)
   const eligible = game.players.length >= 2 && (mode !== '01' || game.bull === 'fat') && game.statsTotals.every(p => p.rounds > 0)
-  return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, stats100, winner, eligible, createdAt: new Date().toISOString() }] }
+  const details = gameDetails({ ...game, winner })
+  return { ...game, ratingResults: [...game.ratingResults, { id, mode, stats, stats100, winner, eligible, createdAt: new Date().toISOString(), details }] }
 }
 function trackStats(before: Game, after: Game, hit: Hit): Game {
   if (after.mode === 'practice') return after
@@ -150,7 +157,7 @@ function resetLeg(game: Game, legMode: '01' | 'cricket', starter: number, initia
   match.stage = 'playing'; match.legStarter = starter; match.corkThrows = []; match.choiceOwner = null; match.choiceAs = null
   const players = newPlayers(game.players.map(p => p.name), initial, legMode)
   const leg = match.legModes[match.legIndex]
-  return { ...game, match, legMode, players, initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, turnMarks: 0, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
+  return { ...game, match, legMode, players, throwHistory: [], initial, statsTotals: emptyStats(players.length), statsFrozen: null, active: starter, round: 1, limit: legMode === 'cricket' ? 20 : 15, throws: [], turnStart: players[starter].score, bust: false, finished: false, winner: null, turnMarks: 0, message: `LEG ${match.legIndex + 1} · ${leg === 'choice' ? legMode.toUpperCase() : leg.toUpperCase()}` }
 }
 export function createGame(mode: Mode, names: string[], initial = 701, bull: Game['bull'] = 'fat', outRule: OutRule = 'master', practiceTarget = 20, bestOf: 3 | 5 = 3, leadRule: MatchLeadRule = 'loser', roboMode: '01' | 'cricket' = '01', practiceMode: PracticeMode = 'target'): Game {
   const gameBull = mode === 'practice' ? 'fat' : bull
@@ -167,7 +174,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   const game: Game = {
     id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [],
     mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, openingCork: mode !== 'practice' && mode !== 'match' && players.length === 2 ? { throws: [], order: [0, 1], attempt: 1 } : null, bull: gameBull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
-    players, active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
+    players, throwHistory: [], active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
     message: mode === 'match' || mode !== 'practice' && players.length === 2 ? 'CORK · PLAYER 1 THROWS FIRST' : 'THROW YOUR DARTS',
   }
@@ -336,6 +343,8 @@ export function throwDart(game: Game, hit: Hit): Game {
     if (g.players.some((other, i) => i !== g.active && (other.marks[hit.base] || 0) < 3)) p.score += extra * hit.base
     if (targets.every(t => p.marks[t] === 3) && g.players.every(other => p.score >= other.score)) { g.finished = true; g.winner = g.active }
   }
+  const { position: _position, ...savedHit } = hit
+  g.throwHistory = [...game.throwHistory, { player: game.active, round: game.round, hit: savedHit, score: p.score, marks: { ...p.marks } }]
   if (!g.bust && (g.throws.length === 3 || g.finished)) {
     const bulls = g.throws.filter(dart => dart.base === 25).length
     const cricket = g.mode === 'cricket' || (g.mode === 'match' || g.mode === 'robo') && g.legMode === 'cricket'
