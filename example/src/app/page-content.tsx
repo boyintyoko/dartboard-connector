@@ -102,18 +102,32 @@ function Board({ onHit, disabled, darts = [], activeTarget, cricketMarks }: { on
     const radius = inner + (outer - inner) * (0.3 + (dartIndex % 2) * 0.35)
     return { x: 200 + radius * Math.sin(angle), y: 200 - radius * Math.cos(angle) }
   }
-  const handleClick = (e: React.MouseEvent<SVGElement>, hit: Hit) => {
+  const handleBoardClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (disabled) return
-    const matrix = e.currentTarget.ownerSVGElement?.getScreenCTM()
-    if (!matrix) { onHit(hit); return }
+    const matrix = e.currentTarget.getScreenCTM()
+    if (!matrix) return
     const point = new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse())
+    const dx = point.x - 200, dy = point.y - 200
+    const radius = Math.hypot(dx, dy)
+    let hit: Hit
+    if (radius <= 16) {
+      hit = { base: 25, ratio: radius <= 8 ? 2 : 1 }
+    } else if (radius <= 164) {
+      const angle = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360
+      const segment = Math.round(angle / 18) % numbers.length
+      const ratio = radius > 150 ? 2 : radius >= 104 ? 1 : radius > 92 ? 3 : 1
+      const ring = ratio === 1 ? radius >= 104 ? 'outer-single' : 'inner-single' : undefined
+      hit = { base: numbers[segment], ratio, ...(ring ? { ring } : {}) }
+    } else {
+      return
+    }
     onHit({ ...hit, position: { x: point.x, y: point.y } })
   }
   const handleKey = (e: React.KeyboardEvent<SVGElement>, hit: Hit) => {
     if (disabled || !['Enter', ' '].includes(e.key)) return
     e.preventDefault(); onHit(hit)
   }
-  return <svg viewBox="0 0 400 400" className="board" aria-label="ダーツボード入力">
+  return <svg viewBox="0 0 400 400" className="board" aria-label="ダーツボード入力" onClick={handleBoardClick}>
     <circle cx="200" cy="200" r="198" fill="#101722" />
     {numbers.map((n, i) => {
       const a = (i * 18 - 9) * Math.PI / 180, b = (i * 18 + 9) * Math.PI / 180
@@ -123,12 +137,12 @@ function Board({ onHit, disabled, darts = [], activeTarget, cricketMarks }: { on
           const isActive = activeTarget === n || activeTarget === 'double' && ratio === 2 || activeTarget === 'triple' && ratio === 3
           const marks = cricketMarks?.[n] ?? 0
           const isMarked = marks >= 3
-          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}${hit.ring === 'outer-single' ? ' 外側シングル' : hit.ring === 'inner-single' ? ' 内側シングル' : ''}${isMarked ? ' · エリア取得済み' : ''}`} onClick={e => handleClick(e, hit)} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke={isActive ? '#c4f36a' : isMarked ? '#c4f36a' : '#0b111a'} strokeWidth={isActive ? 2.6 : isMarked ? 2.1 : 1.5} style={isMarked ? { filter: 'drop-shadow(0 0 5px #c4f36acc)' } : undefined} />
+          return <path key={j} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${label(hit)}${hit.ring === 'outer-single' ? ' 外側シングル' : hit.ring === 'inner-single' ? ' 内側シングル' : ''}${isMarked ? ' · エリア取得済み' : ''}`} onKeyDown={e => handleKey(e, hit)} d={`M ${xy(inner, a)} L ${xy(outer, a)} A ${outer} ${outer} 0 0 1 ${xy(outer, b)} L ${xy(inner, b)} A ${inner} ${inner} 0 0 0 ${xy(inner, a)}`} fill={ratio === 1 ? (i % 2 ? '#d8d7d0' : '#25303e') : (i % 2 ? '#30b8a1' : '#ec6672')} stroke={isActive ? '#c4f36a' : isMarked ? '#c4f36a' : '#0b111a'} strokeWidth={isActive ? 2.6 : isMarked ? 2.1 : 1.5} style={isMarked ? { filter: 'drop-shadow(0 0 5px #c4f36acc)' } : undefined} />
         })}
         <text x={200 + 181 * Math.sin(i * Math.PI / 10)} y={205 - 181 * Math.cos(i * Math.PI / 10)} textAnchor="middle" fill="#e3e9ed" fontSize="15">{n}</text>
       </g>
     })}
-    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => { const isMarked = (cricketMarks?.[25] ?? 0) >= 3; return <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} stroke={activeTarget === 'bull' || isMarked ? '#c4f36a' : 'none'} strokeWidth={activeTarget === 'bull' ? 3 : isMarked ? 2 : 0} style={isMarked ? { filter: 'drop-shadow(0 0 5px #c4f36acc)' } : undefined} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${b.ratio === 1 ? 'S-BULL' : 'D-BULL'}${isMarked ? ' · エリア取得済み' : ''}`} onClick={e => handleClick(e, { base: 25, ratio: b.ratio })} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} /> })}
+    {[{ r: 16, ratio: 1, color: '#30b8a1' }, { r: 8, ratio: 2, color: '#ec6672' }].map(b => { const isMarked = (cricketMarks?.[25] ?? 0) >= 3; return <circle key={b.ratio} cx="200" cy="200" r={b.r} fill={b.color} stroke={activeTarget === 'bull' || isMarked ? '#c4f36a' : 'none'} strokeWidth={activeTarget === 'bull' ? 3 : isMarked ? 2 : 0} style={isMarked ? { filter: 'drop-shadow(0 0 5px #c4f36acc)' } : undefined} role="button" tabIndex={disabled ? -1 : 0} aria-label={`${b.ratio === 1 ? 'S-BULL' : 'D-BULL'}${isMarked ? ' · エリア取得済み' : ''}`} onKeyDown={e => handleKey(e, { base: 25, ratio: b.ratio })} /> })}
     {darts.map((hit, index) => {
       const point = dartPosition(hit, index)
       const angle = (index * 37 - 132) * Math.PI / 180
