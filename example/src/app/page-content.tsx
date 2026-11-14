@@ -504,16 +504,16 @@ export const Example = () => {
       return
     }
     const pitch = 330 + (hit.base % 12) * 22
-    impact(hit.ratio === 3 ? 155 : hit.ratio === 2 ? 135 : 112, hit.ratio === 3 ? 0.13 : 0.1)
+    impact(hit.ratio === 3 ? 178 : hit.ratio === 2 ? 148 : 112, hit.ratio === 3 ? 0.2 : hit.ratio === 2 ? 0.14 : 0.1)
     if (hit.ratio === 3) {
-      tone(pitch * 1.5, 0.015, 0.24, 0.095, 'triangle')
-      tone(pitch * 2, 0.06, 0.34, 0.07, 'sawtooth')
-      tone(pitch * 3, 0.12, 0.3, 0.045, 'sine')
+      tone(pitch * 1.35, 0.005, 0.075, 0.15, 'sine', pitch * 1.15)
+      tone(pitch * 1.7, 0.095, 0.075, 0.17, 'sine', pitch * 1.48)
+      tone(pitch * 2.15, 0.19, 0.24, 0.2, 'triangle', pitch * 1.9)
     } else if (hit.ratio === 2) {
-      tone(pitch * 1.25, 0.02, 0.24, 0.085, 'triangle')
-      tone(pitch * 1.75, 0.07, 0.29, 0.055, 'sawtooth')
+      tone(pitch * 1.25, 0.01, 0.09, 0.13, 'sine', pitch * 1.05)
+      tone(pitch * 1.65, 0.12, 0.18, 0.15, 'triangle', pitch * 1.45)
     } else {
-      tone(pitch, 0.015, 0.18, 0.075, 'triangle', pitch * 0.82)
+      tone(pitch * 1.2, 0.01, 0.14, 0.12, 'triangle', pitch)
     }
   }, [])
   const commitGame = useCallback((previous: Game, next: Game, hit?: Hit, saveHistory = true) => {
