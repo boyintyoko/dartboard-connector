@@ -191,15 +191,20 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     const games = selectedResults.filter(result => result.mode === mode && typeof result[field] === 'number' && Number.isFinite(result[field]))
     return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
   }
-  const dailyEligibleAverage = (mode: '01' | 'cricket') => {
-    const games = selectedResults.filter(result => result.mode === mode && result.eligible !== false && Number.isFinite(result.stats))
-    return games.length ? games.reduce((sum, result) => sum + result.stats, 0) / games.length : null
+  const dailyEligibleAverage = (mode: '01' | 'cricket', field: 'stats' | 'stats_100') => {
+    const games = selectedResults.filter(result => result.mode === mode && result.eligible !== false && Number.isFinite(result[field]))
+    return games.length ? games.reduce((sum, result) => sum + (result[field] as number), 0) / games.length : null
   }
-  const day01 = dailyEligibleAverage('01')
-  const dayCricket = dailyEligibleAverage('cricket')
+  const day01 = dailyEligibleAverage('01', 'stats')
+  const dayCricket = dailyEligibleAverage('cricket', 'stats')
   const dayLevels = [day01 === null ? null : ratingEstimate('01', day01), dayCricket === null ? null : ratingEstimate('cricket', dayCricket)].filter((level): level is number => level !== null)
   const dayRt = dayLevels.length ? dayLevels.reduce((sum, level) => sum + level, 0) / dayLevels.length : null
   const dayFlight = dayRt === null ? '—' : dayRt >= 16 ? 'SA' : dayRt >= 13 ? 'AA' : dayRt >= 10 ? 'A' : dayRt >= 8 ? 'BB' : dayRt >= 6 ? 'B' : dayRt >= 4 ? 'CC' : 'C'
+  const day01_100 = dailyEligibleAverage('01', 'stats_100')
+  const dayCricket100 = dailyEligibleAverage('cricket', 'stats_100')
+  const dayLevels100 = [day01_100 === null ? null : ratingEstimate('01', day01_100), dayCricket100 === null ? null : ratingEstimate('cricket', dayCricket100)].filter((level): level is number => level !== null)
+  const dayRt100 = dayLevels100.length ? dayLevels100.reduce((sum, level) => sum + level, 0) / dayLevels100.length : null
+  const dayFlight100 = dayRt100 === null ? '—' : dayRt100 >= 16 ? 'SA' : dayRt100 >= 13 ? 'AA' : dayRt100 >= 10 ? 'A' : dayRt100 >= 8 ? 'BB' : dayRt100 >= 6 ? 'B' : dayRt100 >= 4 ? 'CC' : 'C'
   const hasUnbackfilledStats = selectedResults.some(result => (result.mode === '01' || result.mode === 'cricket') && result.stats_100 == null)
   const countUpGames = selectedResults.filter(isCountUp)
   const countUpScoreAverage = countUpGames.length ? countUpGames.reduce((sum, result) => sum + (result.score ?? 0), 0) / countUpGames.length : null
@@ -215,7 +220,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       {user ? <button onClick={() => void logout()}>ログアウト</button> : <button disabled={!client || !ready || !googleEnabled || loginBusy || !!game && !game.finished} onClick={() => void login()}>{loginBusy ? 'Googleへ移動中…' : 'Googleでログイン'}</button>}
       {!ready && <small>アカウントを確認中…</small>}{ready && !client && <small>ログイン準備中 · Supabaseの接続設定が必要です</small>}{ready && client && !googleEnabled && !user && <small>Googleログイン準備中</small>}
     </div>
-    <div className="account-rating"><small>参考レーティング</small><strong>{summary.rating?.toFixed(2) ?? '—'} <span>{summary.flight}</span></strong><small>{user ? summary.rating === null ? `測定中 · ${summary.count}/10ゲーム（01とCRの両方が必要）` : `直近${summary.count}ゲーム · 補間による参考値` : 'ログインして対人成績を記録'}</small></div>
+    <div className="account-rating"><small>参考レーティング</small><div className="rating-pair"><div><small>80% RT</small><strong>{summary.rating?.toFixed(2) ?? '—'} <span>{summary.flight}</span></strong></div><div><small>100% RT</small><strong>{summary.rating100?.toFixed(2) ?? '—'} <span>{summary.flight100}</span></strong></div></div><small>{user ? `${summary.rating === null ? `80% ${summary.count}/10ゲーム` : '80%算出済み'} · ${summary.rating100 === null ? `100% ${summary.count100}/10ゲーム` : '100%算出済み'}（01とCRが必要）` : 'ログインして対人成績を記録'}</small></div>
     <div className="account-stats"><span>01 <b>{summary.zeroOne?.toFixed(2) ?? '—'}</b></span><span>CR <b>{summary.cricket?.toFixed(2) ?? '—'}</b></span><span>COUNT-UP <b>{countUpAverage?.toFixed(0) ?? '—'}</b></span></div>
     {user ? <section className="stats-calendar" aria-label="日別スタッツ">
       <header className="stats-calendar-heading"><div><span className="kicker">PLAY HISTORY</span><h3>日別スタッツ</h3></div><div className="calendar-month-nav"><button onClick={() => changeMonth(-1)} aria-label="前の月">←</button><strong>{monthTitle}</strong><button onClick={() => changeMonth(1)} aria-label="次の月">→</button></div></header>
@@ -231,7 +236,7 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       </div>
       <div className="day-stats">
         <div className="day-stats-title"><strong>{selectedDay ? dateFromKey(selectedDay).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : '日付を選択'}</strong><small>{dailyGameGroups.length} ゲーム</small></div>
-        <article className="day-rating"><small>この日の参考RT</small><strong>{dayRt?.toFixed(2) ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '当日の01・CRの80%スタッツから補間' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}・80%スタッツから仮算出` : 'この日に01またはCRの記録がありません'}</span></article>
+        <div className="day-rating-pair"><article className="day-rating"><small>この日の参考RT · 80%</small><strong>{dayRt?.toFixed(2) ?? '—'} <em>{dayFlight}</em></strong><span>{dayLevels.length === 2 ? '01・CRの80%スタッツから算出' : dayLevels.length === 1 ? `当日の${day01 === null ? 'CR' : '01'}から仮算出` : 'この日に対象ゲームの記録がありません'}</span></article><article className="day-rating day-rating-100"><small>この日の参考RT · 100%</small><strong>{dayRt100?.toFixed(2) ?? '—'} <em>{dayFlight100}</em></strong><span>{dayLevels100.length === 2 ? '01・CRの100%スタッツから算出' : dayLevels100.length === 1 ? `当日の${day01_100 === null ? 'CR' : '01'}から仮算出` : 'この日に100%記録がありません'}</span></article></div>
         <div className="day-metric-grid">
           <article className="day-metric"><small>01 · 100%</small><strong>{dailyAverage('01','stats_100')?.toFixed(2) ?? '—'}</strong><span>PPR · {selectedResults.filter(row => row.mode === '01').length}ゲーム</span></article>
           <article className="day-metric"><small>01 · 80%</small><strong>{dailyAverage('01','stats')?.toFixed(2) ?? '—'}</strong><span>PPR</span></article>

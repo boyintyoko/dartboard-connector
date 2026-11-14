@@ -23,12 +23,16 @@ export function ratingEstimate(mode: '01' | 'cricket', stats: number) {
 }
 export function summarizeRating(results: SavedResult[]) {
   const recent = results.filter(game => (game.mode === '01' || game.mode === 'cricket') && game.eligible !== false).slice(0, 30)
-  const average = (mode: SavedResult['mode']) => {
-    const games = recent.filter(game => game.mode === mode)
-    return games.length ? games.reduce((sum, game) => sum + game.stats, 0) / games.length : null
+  const average = (mode: SavedResult['mode'], field: 'stats' | 'stats_100', games = recent) => {
+    const eligible = games.filter(game => game.mode === mode && typeof game[field] === 'number' && Number.isFinite(game[field]))
+    return eligible.length ? eligible.reduce((sum, game) => sum + (game[field] as number), 0) / eligible.length : null
   }
-  const zeroOne = average('01'), cricket = average('cricket')
+  const zeroOne = average('01', 'stats'), cricket = average('cricket', 'stats')
   const rating = recent.length >= 10 && zeroOne !== null && cricket !== null ? (ratingEstimate('01', zeroOne) + ratingEstimate('cricket', cricket)) / 2 : null
   const flight = rating === null ? '—' : rating >= 16 ? 'SA' : rating >= 13 ? 'AA' : rating >= 10 ? 'A' : rating >= 8 ? 'BB' : rating >= 6 ? 'B' : rating >= 4 ? 'CC' : 'C'
-  return { rating, flight, zeroOne, cricket, count: recent.length }
+  const recent100 = recent.filter(game => typeof game.stats_100 === 'number' && Number.isFinite(game.stats_100))
+  const zeroOne100 = average('01', 'stats_100', recent100), cricket100 = average('cricket', 'stats_100', recent100)
+  const rating100 = recent100.length >= 10 && zeroOne100 !== null && cricket100 !== null ? (ratingEstimate('01', zeroOne100) + ratingEstimate('cricket', cricket100)) / 2 : null
+  const flight100 = rating100 === null ? '—' : rating100 >= 16 ? 'SA' : rating100 >= 13 ? 'AA' : rating100 >= 10 ? 'A' : rating100 >= 8 ? 'BB' : rating100 >= 6 ? 'B' : rating100 >= 4 ? 'CC' : 'C'
+  return { rating, flight, zeroOne, cricket, count: recent.length, rating100, flight100, zeroOne100, cricket100, count100: recent100.length }
 }
