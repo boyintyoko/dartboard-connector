@@ -610,13 +610,15 @@ export const Example = () => {
       })().catch(cause => setCameraError(cause instanceof Error ? cause.message : 'このブラウザーではカメラ映像を利用できません。'))
       setMode(match.mode)
       setCount(2)
-      setInitial(match.mode === '01' || match.mode === 'match' ? 501 : 501)
+      const onlineInitial = match.mode === '01' || match.mode === 'match' ? 701 : 501
+      const onlineOutRule = match.mode === '01' || match.mode === 'match' ? 'open' : outRule
+      setInitial(onlineInitial)
       setScreen('game')
       historyRef.current = []
       setHistory([])
       if (match.seat === 0) {
         const isOnlineMedley = match.mode === 'match'
-        const initialGame = createGame(match.mode, match.players, isOnlineMedley ? 701 : 501, bull, isOnlineMedley ? 'open' : outRule, practiceTarget, isOnlineMedley ? 3 : matchBestOf, matchLeadRule)
+        const initialGame = createGame(match.mode, match.players, onlineInitial, bull, onlineOutRule, practiceTarget, isOnlineMedley ? 3 : matchBestOf, matchLeadRule)
         const firstThrower = Math.random() < 0.5 ? 0 : 1
         const next = match.mode === 'match'
           ? resolveMatchCoinToss(initialGame, firstThrower)
