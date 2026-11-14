@@ -165,6 +165,22 @@
 .cricket-mark-count svg{display:block;width:clamp(34px,4vw,48px);height:clamp(30px,3.2vh,38px);overflow:visible}
 .cricket-mark-count path{fill:none;stroke:currentColor;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
 .cricket-score td.closed .cricket-mark-count{color:var(--lime);filter:drop-shadow(0 0 4px #c4f36a70)}
+.cricket-score td{min-width:clamp(46px,5vw,64px);height:clamp(30px,3.3vh,38px);padding:1px 4px}
+.cricket-mark-count svg{display:none}
+.cricket-mark-count b{font:800 clamp(28px,3.5vh,40px)/.85 'Barlow Condensed',sans-serif;letter-spacing:-.06em}
+.cricket-mark-count.marks-1 b{font-size:clamp(34px,4vh,44px);font-weight:500}
+.cricket-mark-count.marks-2 b{font-size:clamp(29px,3.5vh,38px)}
+.cricket-mark-count.marks-3 b{font-size:clamp(31px,3.6vh,40px);font-weight:700}
+.cricket-score tbody th{font-size:clamp(19px,1.7vw,25px)}
+@media (min-width:761px) and (min-height:650px){
+ .board-wrap:has(.cricket-score){justify-content:flex-start}
+ .board-wrap:has(.cricket-score) .board{height:min(30vh,320px,calc(100dvh - 650px));max-height:320px}
+}
+@media (min-width:761px) and (min-height:650px) and (max-height:850px){
+ .board-wrap:has(.cricket-score) .board{height:min(25vh,210px)}
+ .cricket-score td{height:clamp(26px,3vh,32px)}
+ .cricket-mark-count b{font-size:clamp(25px,3vh,32px)}
+}
 
 /* Keep the camera strip from pushing the first Cricket row out of view. */
 .match-video-cricket{margin-top:5px;padding:6px;gap:6px 10px}
