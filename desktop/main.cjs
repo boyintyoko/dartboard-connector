@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, session, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron')
 const { spawn } = require('node:child_process')
 const net = require('node:net')
 const path = require('node:path')
@@ -8,6 +8,79 @@ let serverProcess
 let mainWindow
 let appUrl
 let pendingBluetoothRequest = null
+let pendingAuthCode = null
+const protocolScheme = 'dartsroom'
+
+const hasSingleInstance = app.requestSingleInstanceLock()
+if (!hasSingleInstance) app.quit()
+
+function deliverAuthCode(code) {
+  if (!code) return
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) {
+    pendingAuthCode = code
+    return
+  }
+  mainWindow.webContents.send('auth:callback', code)
+}
+
+function handleAuthDeepLink(value) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== `${protocolScheme}:` || url.hostname !== 'auth' || url.pathname !== '/callback') return
+    const code = url.searchParams.get('code')
+    if (code && code.length < 4096) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.restore()
+        mainWindow.setAlwaysOnTop(true)
+        mainWindow.focus()
+      }
+      deliverAuthCode(code)
+    }
+  } catch { /* Ignore malformed protocol URLs. */ }
+}
+
+if (process.platform === 'win32' && process.argv[1]?.toLowerCase().startsWith(`${protocolScheme}:`)) {
+  handleAuthDeepLink(process.argv[1])
+}
+
+if (hasSingleInstance) {
+  app.on('second-instance', (_event, argv) => {
+    const deepLink = argv.find((arg) => arg.toLowerCase().startsWith(`${protocolScheme}:`))
+    if (deepLink) handleAuthDeepLink(deepLink)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    handleAuthDeepLink(url)
+  })
+}
+
+ipcMain.handle('auth:open-external', async (_event, value) => {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.supabase.co') || url.pathname !== '/auth/v1/authorize' || url.searchParams.get('provider') !== 'google') {
+      throw new Error('Google認証URLを確認できません。')
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(false)
+      mainWindow.minimize()
+    }
+    await shell.openExternal(url.toString())
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error.message || 'ブラウザーを開けませんでした。' }
+  }
+})
+
+ipcMain.on('auth:ready', () => {
+  if (!pendingAuthCode) return
+  const code = pendingAuthCode
+  pendingAuthCode = null
+  deliverAuthCode(code)
+})
 
 function findServerFile() {
   const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'app')
@@ -18,11 +91,11 @@ function findServerFile() {
   return candidates.find((candidate) => fs.existsSync(candidate))
 }
 
-function reservePort() {
+function reservePort(port = 0) {
   return new Promise((resolve, reject) => {
     const server = net.createServer()
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
       const address = server.address()
       server.close((error) => error ? reject(error) : resolve(address.port))
     })
@@ -43,7 +116,11 @@ async function waitForServer(url) {
 async function startLocalServer() {
   const serverFile = findServerFile()
   if (!serverFile) throw new Error('アプリのゲームファイルが見つかりません。再インストールしてください。')
-  const port = await reservePort()
+  // Keep the renderer origin stable so Supabase's PKCE verifier and login
+  // session in localStorage survive app restarts. Fall back if another app
+  // already owns the preferred local port.
+  let port
+  try { port = await reservePort(39173) } catch { port = await reservePort() }
   appUrl = `http://127.0.0.1:${port}`
   const logPath = path.join(app.getPath('userData'), 'server.log')
   const log = fs.createWriteStream(logPath, { flags: 'a' })
@@ -55,6 +132,8 @@ async function startLocalServer() {
       NODE_ENV: 'production',
       HOSTNAME: '127.0.0.1',
       PORT: String(port),
+      DARTS_ROOM_DESKTOP: '1',
+      DARTS_ROOM_PUBLIC_ORIGIN: 'https://darts-room-match.onrender.com',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -192,6 +271,7 @@ async function createWindow() {
     kiosk: true,
     alwaysOnTop: true,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -211,6 +291,11 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32' && process.defaultApp) {
+    app.setAsDefaultProtocolClient(protocolScheme, process.execPath, [path.resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient(protocolScheme)
+  }
   try {
     await startLocalServer()
     await createWindow()

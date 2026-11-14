@@ -17,7 +17,9 @@ Pushing changes to `codex/render-global` also starts the **Build Windows app** G
 
 ## Offline support
 
-Local games, practice, the on-screen board, and Bluetooth board input run locally. Online matchmaking, live video, Google sign-in, and cloud rating sync still need an internet connection. Google sign-in or cloud features also need the corresponding service configuration.
+Local games, practice, the on-screen board, and Bluetooth board input run locally. Online matchmaking, live video, Google sign-in, and cloud rating sync still need an internet connection. The desktop app gets its public Supabase auth configuration from the deployed website, opens Google sign-in in the default browser, and returns to the app through the `dartsroom://auth/callback` protocol.
+
+For Google sign-in, add `dartsroom://auth/callback` to Supabase **Authentication → URL Configuration → Redirect URLs**. The Windows installer registers the `dartsroom://` protocol. Google OAuth still uses the existing Supabase callback URL configured in Google Cloud.
 
 The first Bluetooth connection may show a Windows Bluetooth permission or pairing prompt. Allow Darts Room to use Bluetooth and select the dartboard in the device picker.
 

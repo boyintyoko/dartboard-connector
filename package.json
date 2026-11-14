@@ -37,8 +37,15 @@
     },
     "files": [
       "desktop/main.cjs",
+      "desktop/preload.cjs",
       "desktop/app/**/*",
       "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "Darts Room Google sign-in",
+        "schemes": ["dartsroom"]
+      }
     ],
     "win": {
       "target": [

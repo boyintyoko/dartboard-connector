@@ -5,6 +5,16 @@ import { useEffect, useRef, useState } from 'react'
 import type { Game } from '../lib/game'
 import { ratingEstimate, summarizeRating, type SavedResult } from '../lib/rating'
 
+declare global {
+  interface Window {
+    dartsRoomDesktop?: {
+      isDesktop: true
+      openGoogleAuth: (url: string) => Promise<{ ok: boolean; error?: string }>
+      onAuthCallback: (callback: (code: string) => void) => () => void
+    }
+  }
+}
+
 type PendingResult = SavedResult & { user_id: string }
 const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const dateFromKey = (key: string) => new Date(`${key}T12:00:00`)
@@ -41,7 +51,8 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
       return response.json()
     }).then(config => {
       if (live && config.configured) {
-        setClient(createClient(config.url, config.key)); setGoogleEnabled(config.googleEnabled === true)
+        const desktop = window.dartsRoomDesktop?.isDesktop === true
+        setClient(createClient(config.url, config.key, desktop ? { auth: { flowType: 'pkce' } } : undefined)); setGoogleEnabled(config.googleEnabled === true)
         if (config.providerCheckFailed) setError('Google認証の設定を確認できませんでした。ページを再読み込みしてください。')
       }
       if (live && !config.configured) setReady(true)
@@ -52,6 +63,16 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     if (!client) return
     const { data } = client.auth.onAuthStateChange((_event, session) => { setUser(session?.user ?? null); setReady(true) })
     return () => data.subscription.unsubscribe()
+  }, [client])
+  useEffect(() => {
+    if (!client || !window.dartsRoomDesktop?.isDesktop) return
+    return window.dartsRoomDesktop.onAuthCallback((code) => {
+      void client.auth.exchangeCodeForSession(code).then(({ error: cause }) => {
+        if (cause) setError(`Googleログインを完了できませんでした: ${cause.message}`)
+        else setError('')
+        setLoginBusy(false)
+      })
+    })
   }, [client])
   useEffect(() => {
     const name = user?.user_metadata.full_name || user?.user_metadata.name || null
@@ -126,8 +147,20 @@ export function AccountPanel({ game, seat, onDisplayName, cameraAutoStart, onCam
     if (!client || !googleEnabled) return
     setError(''); setLoginBusy(true)
     try {
-      const { error: cause } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/` } })
+      const desktop = window.dartsRoomDesktop?.isDesktop === true
+      const { data, error: cause } = await client.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: desktop ? 'dartsroom://auth/callback' : `${window.location.origin}/`,
+          ...(desktop ? { skipBrowserRedirect: true } : {}),
+        },
+      })
       if (cause) throw cause
+      if (desktop) {
+        if (!data.url) throw new Error('Google認証URLを取得できませんでした。')
+        const opened = await window.dartsRoomDesktop!.openGoogleAuth(data.url)
+        if (!opened.ok) throw new Error(opened.error || '既定のブラウザーを開けませんでした。')
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Googleログインを開始できませんでした。'); setLoginBusy(false) }
   }
   const logout = async () => {
