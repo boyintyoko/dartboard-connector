@@ -22,7 +22,7 @@ export type MatchState = {
   choiceAs: 'first' | 'game' | null
 }
 export type OpeningCorkState = { throws: Hit[]; order: [number, number]; attempt: number }
-export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string; round?: number; leg?: number }
+export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; playerIndex?: number; call: string; round?: number; leg?: number }
 export type RoundStats = { points: number; marks: number; rounds: number }
 export type GameThrowRecord = { player: number; round: number; hit: Omit<Hit, 'position'>; score: number; marks: Record<number, number> }
 export type GameDetails = { sessionId: string; mode: Mode; legMode: '01' | 'cricket' | null; legIndex?: number; matchBestOf?: 3 | 5; practiceMode?: PracticeMode; initial: number; outRule: OutRule; bull: 'fat' | 'split'; players: string[]; throws: GameThrowRecord[]; winner: number | null }
@@ -407,7 +407,7 @@ export function throwDart(game: Game, hit: Hit): Game {
       '5 MARKS':'ナイスファイブマーク！', '6 MARKS':'ナイスシックスマーク！', '7 MARKS':'ナイスセブンマーク！', '8 MARKS':'ナイスエイトマーク！', '9 MARKS':'ナイスナインマーク！',
     }
     if (title) {
-      g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') || horse ? 'marks' : title.includes('TON') ? 'ton' : 'bull', player: p.name, call: calls[title], round: g.round, ...(g.match ? { leg: g.match.legIndex + 1 } : {}) }
+      g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') || horse ? 'marks' : title.includes('TON') ? 'ton' : 'bull', player: p.name, playerIndex: g.active, call: calls[title], round: g.round, ...(g.match ? { leg: g.match.legIndex + 1 } : {}) }
       g.awardHistory.push(g.award)
     }
 

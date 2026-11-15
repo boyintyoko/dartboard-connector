@@ -36,11 +36,17 @@ function GameResults({ game }: { game: Game }) {
   const match = game.mode === 'match' ? game.match : null
   const legComplete = match?.stage === 'leg-finished'
   const earnedAwards = (game.awardHistory ?? []).filter(award => !legComplete || award.leg === match!.legIndex + 1)
+  const resultTitle = match ? `${match.legModes[match.legIndex] === 'cricket' ? 'CRICKET' : `${game.initial} GAME`} · LEG ${match.legIndex + 1}` : cricket ? 'CRICKET GAME' : practice ? (game.practiceMode ? practiceModeTitle[game.practiceMode] : 'PRACTICE') : `${game.initial} GAME`
   const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
   const practiceSummary = (player: Game['players'][number]) => practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score
   return <section className="results-panel" aria-label="ゲーム結果">
-    <header className="results-heading"><div className="kicker">{legComplete ? `LEG ${match!.legIndex + 1} RESULTS` : 'FINAL RESULTS'}</div><h2>{game.winner === null ? 'DRAW' : legComplete ? `${game.players[game.winner].name} WON THE LEG` : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small>{legComplete ? ` · LEG ${match.legIndex + 1}` : ' · FINAL MATCH'}</small></p>}</header>
-    <div className="results-players">{game.players.map((player, index) => <article className={`result-player ${game.winner === index ? 'winner' : ''}`} key={index}>
+    <header className="results-heading"><div className="result-titlebar"><strong>{resultTitle} GAME RESULT</strong><span>{game.mode === 'robo' ? 'ROBO MATCH' : game.mode === 'match' ? 'MATCH' : 'DARTS ROOM'}</span></div><div className="kicker">{legComplete ? `LEG ${match!.legIndex + 1} RESULTS` : 'FINAL RESULTS'}</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small>{legComplete ? ` · LEG ${match!.legIndex + 1}` : ' · FINAL MATCH'}</small></p>}</header>
+    <div className="results-players">{game.players.map((player, index) => {
+      const playerAwards = earnedAwards.filter(award => award.playerIndex === index || (award.playerIndex === undefined && award.player === player.name))
+      const awardCounts = Array.from(playerAwards.reduce((counts, award) => counts.set(award.title, (counts.get(award.title) ?? 0) + 1), new Map<string, number>()).entries())
+      const rating = game.ratingResults.at(-1)
+      return <article className={`result-player player-${index % 2 ? 'blue' : 'red'} ${game.winner === index ? 'winner' : ''}`} key={index}>
+      <div className="result-player-outcome">{game.winner === index ? 'WIN' : game.winner === null ? 'DRAW' : 'LOSE'}</div>
       <div className="result-player-heading"><span>P{index + 1}</span><strong>{player.name}</strong><em>{game.winner === index ? 'WINNER' : game.winner === null ? 'DRAW' : 'FINISH'}</em></div>
       <div className="result-main-score"><small>{practice ? practiceHitOnly ? 'TARGET HITS' : 'FINAL SCORE' : cricket ? game.players.length === 1 ? 'TARGETS CLOSED' : 'CRICKET SCORE' : match ? `${legComplete ? `LEG ${match!.legIndex + 1}` : 'FINAL LEG'} · REMAINING` : 'REMAINING SCORE'}</small><b>{practice ? practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score : cricket && game.players.length === 1 ? `${closedTargets(player)} / ${targets.length}` : player.score}</b></div>
       <div className="result-stats">
@@ -61,8 +67,9 @@ function GameResults({ game }: { game: Game }) {
           {match && <div><small>MATCH LEGS</small><strong>{match.legWins[index]}</strong></div>}
         </>}
       </div>
-    </article>)}</div>
-    {earnedAwards.length > 0 && <section className="results-awards" aria-label="獲得したアワード"><header><span>AWARDS</span><small>{earnedAwards.length} EARNED</small></header><ul>{earnedAwards.map(award => <li key={award.id}><strong>{award.title}</strong><span>{award.player}</span><small>{award.leg ? `LEG ${award.leg} · ` : ''}ROUND {award.round ?? '—'}</small></li>)}</ul></section>}
+      {rating && !practice && <div className="result-average-line"><span>STATS</span><strong>{rating.stats100[index]?.toFixed(2) ?? '—'} <small>({rating.stats[index]?.toFixed(2) ?? '—'})</small></strong></div>}
+      <section className="result-player-awards" aria-label={`${player.name}のアワード`}><header>AWARD &amp; FEATS</header>{awardCounts.length ? <ul>{awardCounts.map(([title, count]) => <li key={title}><span className="award-bullet" aria-hidden="true">✦</span><strong>{title}</strong><small>×{count}</small></li>)}</ul> : <p>—</p>}</section>
+    </article>})}</div>
   </section>
 }
 
