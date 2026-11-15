@@ -86,38 +86,69 @@ export function checkoutAdvice(score: number, outRule: OutRule, bull: Game['bull
   const finalOrder = (hit: Hit) => hit.ratio === 2 ? (hit.base === 25 ? 0 : hit.base === 20 ? 1 : hit.base === 16 ? 2 : hit.base === 18 ? 3 : 10 + (20 - hit.base)) : hit.ratio === 3 ? 40 + (20 - hit.base) : hit.base === 25 ? 80 : 100 + (20 - hit.base)
   const scoringOrder = (hit: Hit) => hit.ratio === 3 ? hit.base === 20 ? 0 : 10 + (20 - hit.base) : hit.ratio === 2 ? 30 + (20 - hit.base) : hit.base === 25 ? 55 : 60 + (20 - hit.base)
   const byPreference = (a: Hit, b: Hit, rank: (hit: Hit) => number) => rank(a) - rank(b)
+  const orderedHits = [...scoringHits].sort((a, b) => byPreference(a, b, scoringOrder))
+  const maxCheckout = outRule === 'double' ? 170 : 180
+  const minCheckout = outRule === 'open' ? 1 : 2
+  const darts = Math.max(0, Math.min(3, dartsAvailable))
+  if (!Number.isInteger(score) || score < minCheckout || darts === 0 || score > maxCheckout + darts * 180) return null
+  const finishMemo = new Map<string, Hit[] | null>()
   const finish = (remaining: number, darts: number): Hit[] | null => {
+    const key = `${remaining}:${darts}`
+    if (finishMemo.has(key)) return finishMemo.get(key) ?? null
     if (darts === 1) {
       const last = scoringHits.filter(outAllowed).sort((a, b) => byPreference(a, b, finalOrder)).find(hit => points(hit, bull) === remaining)
-      return last ? [last] : null
+      const result = last ? [last] : null
+      finishMemo.set(key, result)
+      return result
     }
-    for (const hit of [...scoringHits].sort((a, b) => byPreference(a, b, scoringOrder))) {
+    for (const hit of orderedHits) {
       const hitPoints = points(hit, bull)
       if (hitPoints >= remaining) continue
       const rest = finish(remaining - hitPoints, darts - 1)
-      if (rest) return [hit, ...rest]
+      if (rest) {
+        const result = [hit, ...rest]
+        finishMemo.set(key, result)
+        return result
+      }
     }
+    finishMemo.set(key, null)
     return null
   }
-  if (!Number.isInteger(score) || score < 2 || score > (outRule === 'open' ? 180 : 170)) return null
-  for (let darts = 1; darts <= Math.max(0, Math.min(3, dartsAvailable)); darts++) {
+  for (let darts = 1; darts <= Math.min(3, dartsAvailable); darts++) {
     const route = finish(score, darts)
     if (route) return { kind: 'checkout', darts: route, leave: 0 }
   }
-  const preferredLeaves = [40, 32, 36, 24, 20, 16, 48, 50, 64, 56, 60]
+  // Prefer standard double leaves, while also considering high finishes. Master-out
+  // routes are validated with their own final-dart rule, so triple finishes remain legal.
+  const highLeaves = [170, 167, 164, 161, 160, 158, 157, 156, 155, 154, 153, 152, 151, 150, 148, 147, 146, 145, 144, 143, 142, 141, 140, 139, 138, 137, 136, 135, 134, 133, 132, 131, 130, 129, 128, 127, 126, 125, 124, 123, 122, 121, 120, 119, 118, 117, 116, 115, 114, 113, 112, 111, 110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100]
+  const classicLeaves = [80, 72, 68, 64, 60, 56, 50, 48, 40, 36, 32, 24, 20, 16]
+  const priorityLeaves = outRule === 'master'
+    ? [180, 177, 174, 171, ...highLeaves, ...classicLeaves]
+    : outRule === 'open'
+      ? [180, 177, 174, 171, ...highLeaves, ...classicLeaves]
+      : [...highLeaves, ...classicLeaves]
+  const preferredLeaves = Array.from(new Set([...priorityLeaves, ...Array.from({ length: maxCheckout }, (_, index) => maxCheckout - index)]))
   for (const leave of preferredLeaves) {
-    if (leave >= score || !finish(leave, 3)) continue
+    if (leave >= score || score - leave > 180 * darts || !finish(leave, 3)) continue
+    const arrangeMemo = new Map<string, Hit[] | null>()
     const arrange = (remaining: number, darts: number): Hit[] | null => {
       if (darts === 0) return remaining === 0 ? [] : null
-      for (const hit of [...scoringHits].sort((a, b) => byPreference(a, b, scoringOrder))) {
+      const key = `${remaining}:${darts}`
+      if (arrangeMemo.has(key)) return arrangeMemo.get(key) ?? null
+      for (const hit of orderedHits) {
         const value = points(hit, bull)
         if (value > remaining) continue
         const rest = arrange(remaining - value, darts - 1)
-        if (rest) return [hit, ...rest]
+        if (rest) {
+          const result = [hit, ...rest]
+          arrangeMemo.set(key, result)
+          return result
+        }
       }
+      arrangeMemo.set(key, null)
       return null
     }
-    const route = arrange(score - leave, Math.max(0, Math.min(3, dartsAvailable)))
+    const route = arrange(score - leave, darts)
     if (route) return { kind: 'arrange', darts: route, leave }
   }
   return null
