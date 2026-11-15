@@ -35,6 +35,7 @@ function GameResults({ game }: { game: Game }) {
   const practiceHitOnly = practice && (game.practiceMode === 'target' || game.practiceMode === 'eagles-eye')
   const match = game.mode === 'match' ? game.match : null
   const legComplete = match?.stage === 'leg-finished'
+  const earnedAwards = (game.awardHistory ?? []).filter(award => !legComplete || award.leg === match!.legIndex + 1)
   const closedTargets = (player: Game['players'][number]) => targets.filter(target => (player.marks[target] || 0) >= 3).length
   const practiceSummary = (player: Game['players'][number]) => practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score
   return <section className="results-panel" aria-label="ゲーム結果">
@@ -61,6 +62,7 @@ function GameResults({ game }: { game: Game }) {
         </>}
       </div>
     </article>)}</div>
+    {earnedAwards.length > 0 && <section className="results-awards" aria-label="獲得したアワード"><header><span>AWARDS</span><small>{earnedAwards.length} EARNED</small></header><ul>{earnedAwards.map(award => <li key={award.id}><strong>{award.title}</strong><span>{award.player}</span><small>{award.leg ? `LEG ${award.leg} · ` : ''}ROUND {award.round ?? '—'}</small></li>)}</ul></section>}
   </section>
 }
 

@@ -22,7 +22,7 @@ export type MatchState = {
   choiceAs: 'first' | 'game' | null
 }
 export type OpeningCorkState = { throws: Hit[]; order: [number, number]; attempt: number }
-export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string }
+export type Award = { id: string; title: string; kind: 'bull' | 'ton' | 'marks'; player: string; call: string; round?: number; leg?: number }
 export type RoundStats = { points: number; marks: number; rounds: number }
 export type GameThrowRecord = { player: number; round: number; hit: Omit<Hit, 'position'>; score: number; marks: Record<number, number> }
 export type GameDetails = { sessionId: string; mode: Mode; legMode: '01' | 'cricket' | null; legIndex?: number; matchBestOf?: 3 | 5; practiceMode?: PracticeMode; initial: number; outRule: OutRule; bull: 'fat' | 'split'; players: string[]; throws: GameThrowRecord[]; winner: number | null }
@@ -34,6 +34,7 @@ export type Game = {
   statsFrozen: RoundStats[] | null
   ratingResults: RatingResult[]
   award?: Award | null
+  awardHistory: Award[]
   turnMarks?: number
   mode: Mode
   legMode: '01' | 'cricket' | null
@@ -144,14 +145,15 @@ export function roboAim(game: Game): Hit {
     }
     return { base: 20, ratio: 3 }
   }
+  const advice = checkoutAdvice(remaining, game.outRule, game.bull, 3 - game.throws.length)
+  if (advice?.darts[0]) return advice.darts[0]
   const ratios = game.outRule === 'double' ? [2] : game.outRule === 'master' ? [2, 3] : [1, 2, 3]
   for (const ratio of ratios) {
     for (const base of [...Array.from({ length: 20 }, (_, i) => 20 - i), 25]) {
       if (points({ base, ratio }, game.bull) === remaining && (base !== 25 || ratio <= 2)) return { base, ratio }
     }
   }
-  if (game.bull === 'fat' && remaining > 50) return { base: 25, ratio: 1 }
-  if (remaining > 62) return game.bull === 'fat' ? { base: 25, ratio: 1 } : { base: 20, ratio: 3 }
+  if (remaining > 62) return { base: 20, ratio: 3 }
   if (remaining > 40 && remaining <= 60) return { base: remaining - 40, ratio: 1 }
   return { base: remaining % 2 ? 1 : Math.min(20, Math.max(1, remaining - 2)), ratio: 1 }
 }
@@ -214,7 +216,7 @@ export function createGame(mode: Mode, names: string[], initial = 701, bull: Gam
   const practiceStart = practiceMode === 'half-it' ? 40 : 0
   const players = newPlayers(names, mode === 'practice' ? practiceStart : initial, gameMode)
   const game: Game = {
-    id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [],
+    id: crypto.randomUUID(), initial, statsTotals: emptyStats(players.length), statsFrozen: null, ratingResults: [], awardHistory: [],
     mode, legMode: mode === 'match' ? '01' : mode === 'robo' ? roboMode : null, match, openingCork: mode !== 'practice' && mode !== 'match' && players.length === 2 ? { throws: [], order: [0, 1], attempt: 1 } : null, bull: gameBull, outRule, practiceTarget, practiceHits: 0, practiceMode, practiceRoundHits: 0, practiceOpened: [],
     players, throwHistory: [], active: 0, round: 1, limit: mode === 'practice' ? practiceMode === 'target' ? 0 : practiceMode === 'half-it' ? halfItTargets.length : 8 : gameMode === 'cricket' ? (players.length === 1 ? 0 : 20) : isX01(mode) ? 15 : 0,
     throws: [], turnStart: players[0]?.score ?? 0, bust: false, finished: false, winner: null,
@@ -328,7 +330,7 @@ export function chooseMatchGame(game: Game, legMode: '01' | 'cricket'): Game {
 
 export function throwDart(game: Game, hit: Hit): Game {
   if (game.finished || game.throws.length >= 3 || game.bust || game.mode === 'match' && game.match?.stage !== 'playing') return game
-  let g: Game = { ...game, award: null, practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
+  let g: Game = { ...game, award: null, awardHistory: [...(game.awardHistory || [])], practiceOpened: [...game.practiceOpened], players: game.players.map(p => ({ ...p, marks: { ...p.marks } })), throws: [...game.throws, hit] }
   const p = g.players[g.active]
   p.darts++
   const value = points(hit, g.bull)
@@ -404,7 +406,10 @@ export function throwDart(game: Game, hit: Hit): Game {
       'WHITE HORSE':'ナイスホース！', 'THREE IN THE BLACK':'ナイスブラック！',
       '5 MARKS':'ナイスファイブマーク！', '6 MARKS':'ナイスシックスマーク！', '7 MARKS':'ナイスセブンマーク！', '8 MARKS':'ナイスエイトマーク！', '9 MARKS':'ナイスナインマーク！',
     }
-    if (title) g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') || horse ? 'marks' : title.includes('TON') ? 'ton' : 'bull', player: p.name, call: calls[title] }
+    if (title) {
+      g.award = { id: crypto.randomUUID(), title, kind: title.includes('MARKS') || horse ? 'marks' : title.includes('TON') ? 'ton' : 'bull', player: p.name, call: calls[title], round: g.round, ...(g.match ? { leg: g.match.legIndex + 1 } : {}) }
+      g.awardHistory.push(g.award)
+    }
 
   }
   g = trackStats(game, g, hit)

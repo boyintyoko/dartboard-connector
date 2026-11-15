@@ -280,6 +280,14 @@
 .game-results-view .finish-card:has(> :only-child){width:min(100%,520px)}
 .game-results-view .finish-card .secondary-button{background:var(--surface);color:var(--text);border:1px solid var(--stroke)}
 .game-results-view .finish-card .secondary-button:hover{background:var(--surface2);border-color:var(--lime);color:var(--lime)}
+.results-awards{margin:clamp(8px,1.5vh,16px) 0 0;padding-top:9px;border-top:1px solid var(--stroke)}
+.results-awards>header{display:flex;align-items:center;justify-content:space-between;color:var(--lime);font:700 10px 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.results-awards>header small{color:var(--muted);font-size:8px}
+.results-awards ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:5px;list-style:none;margin:6px 0 0;padding:0;max-height:18vh;overflow:auto}
+.results-awards li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;min-width:0;padding:6px 8px;background:var(--surface);border:1px solid var(--stroke)}
+.results-awards li strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font:700 10px 'Barlow Condensed',sans-serif;letter-spacing:.4px}
+.results-awards li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:8px}
+.results-awards li small{grid-column:2;grid-row:1 / span 2;color:var(--muted);font:600 8px 'Barlow Condensed',sans-serif;white-space:nowrap}
 @media(max-width:1000px){
  .game-results-view .result-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
@@ -290,4 +298,5 @@
  .game-results-view .results-players{grid-template-columns:1fr}
  .game-results-view .finish-card{width:100%;gap:8px}
  .game-results-view .finish-card .primary-button{min-height:52px;padding-inline:10px;font-size:11px}
+ .results-awards ul{grid-template-columns:repeat(2,minmax(0,1fr));max-height:16vh}
 }
