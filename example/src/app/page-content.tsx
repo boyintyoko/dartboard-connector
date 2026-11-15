@@ -41,7 +41,7 @@ function GameResults({ game }: { game: Game }) {
   const practiceSummary = (player: Game['players'][number]) => practiceHitOnly ? `${game.practiceHits} / ${player.darts}` : player.score
   return <section className="results-panel" aria-label="ゲーム結果">
     <header className="results-heading"><div className="result-titlebar"><strong>{resultTitle} GAME RESULT</strong><span>{game.mode === 'robo' ? 'ROBO MATCH' : game.mode === 'match' ? 'MATCH' : 'DARTS ROOM'}</span></div><div className="kicker">{legComplete ? `LEG ${match!.legIndex + 1} RESULTS` : 'FINAL RESULTS'}</div><h2>{game.winner === null ? 'DRAW' : `${game.players[game.winner].name} WIN`}</h2>{match && <p>LEG WINS <strong>{match.legWins[0]} — {match.legWins[1]}</strong><small>{legComplete ? ` · LEG ${match!.legIndex + 1}` : ' · FINAL MATCH'}</small></p>}</header>
-    <div className="results-players">{game.players.map((player, index) => {
+    <div className={`results-players${game.players.length === 1 ? ' solo-results' : ''}`}>{game.players.map((player, index) => {
       const playerAwards = earnedAwards.filter(award => award.playerIndex === index || (award.playerIndex === undefined && award.player === player.name))
       const awardCounts = Array.from(playerAwards.reduce((counts, award) => counts.set(award.title, (counts.get(award.title) ?? 0) + 1), new Map<string, number>()).entries())
       const rating = game.ratingResults.at(-1)
