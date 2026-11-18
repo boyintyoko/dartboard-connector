@@ -80,9 +80,10 @@ export const isX01 = (mode: Mode | 'choice') => mode === '01' || mode === 'match
 export const isX01Game = (game: Game) => game.mode === 'match' || game.mode === 'robo' ? game.legMode === '01' : isX01(game.mode)
 export const label = (hit: Hit) => hit.base === 0 ? 'MISS' : hit.base === 25 ? (hit.ratio === 2 ? 'D-BULL' : 'S-BULL') : `${['', 'S', 'D', 'T'][hit.ratio]}${hit.base}`
 export const points = (hit: Hit, bull: Game['bull']) => hit.base === 25 && bull === 'fat' ? 50 : hit.base * hit.ratio
+export const isMasterOutHit = (hit: Hit, bull: Game['bull']) => hit.ratio >= 2 || hit.base === 25 && bull === 'fat'
 export function checkoutAdvice(score: number, outRule: OutRule, bull: Game['bull'], dartsAvailable = 3): { kind: 'checkout' | 'arrange'; darts: Hit[]; leave: number } | null {
   const scoringHits: Hit[] = [...Array.from({ length: 20 }, (_, index) => index + 1).flatMap(base => [1, 2, 3].map(ratio => ({ base, ratio }))), { base: 25, ratio: 1 }, { base: 25, ratio: 2 }]
-  const outAllowed = (hit: Hit) => outRule === 'open' || outRule === 'master' && (hit.ratio === 2 || hit.ratio === 3) || outRule === 'double' && hit.ratio === 2
+  const outAllowed = (hit: Hit) => outRule === 'open' || outRule === 'master' && isMasterOutHit(hit, bull) || outRule === 'double' && hit.ratio === 2
   const finalOrder = (hit: Hit) => hit.ratio === 2 ? (hit.base === 25 ? 0 : hit.base === 20 ? 1 : hit.base === 16 ? 2 : hit.base === 18 ? 3 : 10 + (20 - hit.base)) : hit.ratio === 3 ? 40 + (20 - hit.base) : hit.base === 25 ? 80 : 100 + (20 - hit.base)
   const scoringOrder = (hit: Hit) => hit.ratio === 3 ? hit.base === 20 ? 0 : 10 + (20 - hit.base) : hit.ratio === 2 ? 30 + (20 - hit.base) : hit.base === 25 ? 55 : 60 + (20 - hit.base)
   const byPreference = (a: Hit, b: Hit, rank: (hit: Hit) => number) => rank(a) - rank(b)
@@ -381,7 +382,7 @@ export function throwDart(game: Game, hit: Hit): Game {
       if (p.score === 0) {
         const checkoutAllowed = g.outRule === 'open'
           ? hit.base !== 0
-          : g.outRule === 'master' ? hit.ratio >= 2 : hit.ratio === 2
+          : g.outRule === 'master' ? isMasterOutHit(hit, g.bull) : hit.ratio === 2
         if (checkoutAllowed) { g.finished = true; g.winner = g.active }
         else { p.points -= g.turnStart; p.score = g.turnStart; g.bust = true; g.message = `BUST · ${g.outRule.toUpperCase()} OUT` }
       }
