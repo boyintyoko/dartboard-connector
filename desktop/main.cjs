@@ -167,6 +167,15 @@ function installBluetoothPicker(webContents) {
       request.callback(deviceId)
     }
 
+    // Electron delivers this event again as nearby devices are discovered.
+    // Select the DARTSLIVE board as soon as it appears instead of making the
+    // player wait for and operate a second device picker.
+    const dartslive = [...request.devices.values()].find((device) => /dartslive/i.test(device.deviceName || ''))
+    if (dartslive) {
+      finish(dartslive.deviceId)
+      return
+    }
+
     if (request.devices.size > 0) {
       clearTimeout(request.emptyTimer)
       if (request.showTimer || request.dialogOpen) return

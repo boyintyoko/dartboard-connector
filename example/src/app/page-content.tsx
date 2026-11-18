@@ -711,11 +711,19 @@ export const Example = () => {
 
   useEffect(() => {
     connector.current = new DARTSLIVEHomeConnector()
+    let stopWatching: (() => void) | null = null
+    let watchAttempted = false
     const reconnect = async () => {
       const current = connector.current
-      if (!current || !autoReconnectEnabled.current || current.isConnected || autoReconnectBusy.current) return
+      if (!current || !autoReconnectEnabled.current || autoReconnectBusy.current) return
       autoReconnectBusy.current = true
       try {
+        if (!watchAttempted) {
+          watchAttempted = true
+          stopWatching = await current.watchAuthorizedDevice(() => { void reconnect() })
+          if (!stopWatching) watchAttempted = false
+        }
+        if (current.isConnected) return
         if (!await current.hasAuthorizedDevice()) { setSearchingForBoard(false); return }
         setSearchingForBoard(true)
         if (!await current.reconnectAuthorized()) return
@@ -728,12 +736,15 @@ export const Example = () => {
         autoReconnectBusy.current = false
       }
     }
+    // Reconnect quickly when an authorized board powers on or comes back in
+    // range. Web Bluetooth does not expose a reliable arrival event in every
+    // Chromium build, so this short poll is the compatibility fallback.
     const timer = window.setInterval(() => {
       if (connector.current && !connector.current.isConnected) setConnected(false)
       void reconnect()
-    }, 4000)
+    }, 1000)
     void reconnect()
-    return () => { window.clearInterval(timer); unsubscribe.current?.(); connector.current?.disconnect(); localStreamRef.current?.getTracks().forEach(track => track.stop()); peerConnection.current?.close(); onlineSocket.current?.disconnect(); void audio.current?.close() }
+    return () => { window.clearInterval(timer); stopWatching?.(); unsubscribe.current?.(); connector.current?.disconnect(); localStreamRef.current?.getTracks().forEach(track => track.stop()); peerConnection.current?.close(); onlineSocket.current?.disconnect(); void audio.current?.close() }
   }, [])
   useEffect(() => {
     if (!localVideo.current) return

@@ -34,6 +34,32 @@ export class DARTSLIVEHomeConnector implements DartsboardBluetoothConnector<Sign
     return device ? this.connectDevice(device) : false
   }
 
+  /** Watches an already-authorized board for nearby advertisements and link drops. */
+  async watchAuthorizedDevice(onAvailable: () => void) {
+    const device = await this.authorizedDevice()
+    if (!device) return null
+
+    let active = true
+    const notify = () => { if (active) onAvailable() }
+    device.addEventListener("advertisementreceived", notify)
+    device.addEventListener("gattserverdisconnected", notify)
+    const stop = () => {
+      active = false
+      device.removeEventListener("advertisementreceived", notify)
+      device.removeEventListener("gattserverdisconnected", notify)
+    }
+
+    const watchable = device as BluetoothDevice & { watchAdvertisements?: () => Promise<void> }
+    if (typeof watchable.watchAdvertisements !== "function") return stop
+    try {
+      await watchable.watchAdvertisements()
+    } catch {
+      // Some Chromium/Windows versions do not support advertisement watching.
+      // The app's short reconnect poll remains active as a fallback.
+    }
+    return stop
+  }
+
   private async authorizedDevice() {
     const devices = await this.authorizedDevices()
     return devices.find((candidate) => /dartslive/i.test(candidate.name ?? "")) ?? (devices.length === 1 ? devices[0] : null)
