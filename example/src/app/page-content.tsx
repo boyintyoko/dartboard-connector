@@ -771,27 +771,10 @@ export const Example = () => {
       if (previous.bust || previous.throws.length >= 3) return
       const level = difficulty === 'HARD' ? 0.68 : difficulty === 'NORMAL' ? 0.43 : 0.2
       const cricket = previous.mode === 'cricket' || (previous.mode === 'match' || previous.mode === 'robo') && previous.legMode === 'cricket'
-      const own = previous.players[1], opponent = previous.players[0]
-      const ownOpenTargets = targets.filter(number => (own.marks[number] || 0) < 3)
-      const opponentOpenTargets = targets.filter(number => (opponent.marks[number] || 0) < 3)
-      const target = cricket
-        ? ownOpenTargets.find(number => (opponent.marks[number] || 0) < 3)
-          ?? (own.score < opponent.score ? opponentOpenTargets[0] : undefined)
-          ?? ownOpenTargets[0]
-          ?? opponentOpenTargets[0]
-          ?? 20
-        : 20
-      const canHit = Math.random() < level
-      const ownMarks = own.marks[target] || 0
-      const targetOpenForOpponent = (opponent.marks[target] || 0) < 3
-      const ratio = cricket
-        ? ownMarks >= 3 || own.score < opponent.score && targetOpenForOpponent
-          ? target === 25 ? 2 : 3
-          : Math.min(target === 25 ? 2 : 3, Math.max(1, 3 - ownMarks))
-        : target === 25 ? (Math.random() < level ? 2 : 1) : Math.random() < level * .55 ? 3 : Math.random() < .72 ? 2 : 1
       const aim = roboAim(previous)
+      const canHit = Math.random() < level
       const hit: Hit = cricket
-        ? canHit ? { base: target, ratio } : { base: 0, ratio: 1 }
+        ? canHit ? aim : { base: 0, ratio: 1 }
         : canHit ? aim : { base: [19, 18, 17, 16, 15, 12, 5][Math.floor(Math.random() * 7)], ratio: 1 }
       if (hit.base !== 0 && hit.base !== 25 && hit.ratio === 1) hit.ring = Math.random() < .5 ? 'inner-single' : 'outer-single'
       commitGame(previous, throwDart(previous, hit), hit)

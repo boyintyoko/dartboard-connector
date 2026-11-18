@@ -156,26 +156,35 @@ export function checkoutAdvice(score: number, outRule: OutRule, bull: Game['bull
 export function roboAim(game: Game): Hit {
   const player = game.players[game.active]
   const remaining = player.score
-  const cricket = (game.mode === 'cricket' || game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
+  const cricket = game.mode === 'cricket' || (game.mode === 'match' || game.mode === 'robo') && game.legMode === 'cricket'
   if (cricket) {
     const opponent = game.players.find((_, index) => index !== game.active)
     if (!opponent) return { base: 20, ratio: 3 }
     const ownOpen = targets.filter(target => (player.marks[target] || 0) < 3)
-    const opponentOpen = ownOpen.filter(target => (opponent.marks[target] || 0) < 3)
     const scoringTargets = targets.filter(target => (player.marks[target] || 0) >= 3 && (opponent.marks[target] || 0) < 3)
     const isBehind = player.score < opponent.score
     if (isBehind && scoringTargets.length) {
-      return { base: scoringTargets[0], ratio: 3 }
+      const target = scoringTargets[0]
+      return { base: target, ratio: target === 25 ? 2 : 3 }
     }
-    if (opponentOpen.length) {
-      const target = opponentOpen[0]
-      return { base: target, ratio: Math.min(3, 3 - (player.marks[target] || 0)) }
+    // Close a number the opponent has already marked, even if they have
+    // closed it completely. Skipping it leaves their scoring lane open.
+    const threatened = ownOpen.filter(target => (opponent.marks[target] || 0) > 0)
+    if (threatened.length) {
+      const target = threatened[0]
+      return { base: target, ratio: Math.min(target === 25 ? 2 : 3, 3 - (player.marks[target] || 0)) }
     }
-    if (scoringTargets.length) {
-      return { base: scoringTargets[0], ratio: 3 }
+    if (ownOpen.length) {
+      const target = ownOpen[0]
+      return { base: target, ratio: Math.min(target === 25 ? 2 : 3, 3 - (player.marks[target] || 0)) }
     }
+    if (scoringTargets.length) return { base: scoringTargets[0], ratio: scoringTargets[0] === 25 ? 2 : 3 }
     return { base: 20, ratio: 3 }
   }
+  // Fat-bull soft-tip 01 is commonly played by aiming at the larger 50-point
+  // bull area. T20 is worth 60, but the fixed T20 target ignores the selected
+  // bull format and makes the CPU play like a steel-tip scorer.
+  if (remaining > 180) return game.bull === 'fat' ? { base: 25, ratio: 1 } : { base: 20, ratio: 3 }
   const advice = checkoutAdvice(remaining, game.outRule, game.bull, 3 - game.throws.length)
   if (advice?.darts[0]) return advice.darts[0]
   const ratios = game.outRule === 'double' ? [2] : game.outRule === 'master' ? [2, 3] : [1, 2, 3]
