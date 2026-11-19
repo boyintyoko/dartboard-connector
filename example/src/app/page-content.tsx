@@ -572,6 +572,7 @@ export const Example = () => {
   const receive = useCallback((signal: BoardSignal) => {
     const previous = gameRef.current
     const seat = onlineSeatRef.current
+    if (previous && isRoboGame(previous) && previous.active === 1) return
     if (onlineStatusRef.current === 'matched' && (seat === null || previous?.active !== seat)) return
     const result = receiveBoardSignal(previous, signal)
     if (previous && result.applied && result.game) applyRef.current(signal.type === 'segment' ? signal : 'next')
